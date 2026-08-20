@@ -1,0 +1,74 @@
+# .dockerignore
+# Исключаем системные файлы
+.git/
+.gitignore
+.gitattributes
+README.md
+LICENSE
+Makefile
+.dockerignore
+
+# Исключаем файлы окружения
+.env
+.env.*
+*.local
+
+# Исключаем зависимости и сборку
+vendor/
+node_modules/
+*.log
+*.pid
+*.pid.lock
+
+# Исключаем IDE файлы
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Исключаем документацию
+docs/
+*.md
+!README.md
+
+# Исключаем тесты и временные файлы
+test/
+tests/
+tmp/
+temp/
+*.test
+*.out
+coverage.txt
+coverage.html
+*.coverprofile
+
+# Исключаем Docker файлы
+Dockerfile
+docker/
+
+# Исключаем OS файлы
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Исключаем бинарники и папки сборки
+bin/
+dist/
+build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Исключаем файлы конфигурации (если не нужны в контейнере)
+config/
+*.conf
+*.config
+
+# Исключаем скрипты
+scripts/
+*.sh
+*.bat
+*.ps1

@@ -30,3 +30,12 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+note.txt
+tz.txt
+
+#docker-compose
+docker/minio/certs/*
+docker/minio/minio.license
+docker/postgres/data/*
+docker/rabbitmq/data/*
