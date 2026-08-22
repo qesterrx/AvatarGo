@@ -61,6 +61,16 @@ func TestHandleUploadEvent_Success(t *testing.T) {
 		Get(ctx, event.S3Key).
 		Return(makeTestJPEG(), "image/jpeg", nil)
 
+	// ожидаем проверки наличия миниатюр
+	mockFile.EXPECT().
+		Exists(ctx, "1/1/100x100.jpg").
+		Return(false, nil)
+
+	// ожидаем проверки наличия миниатюр
+	mockFile.EXPECT().
+		Exists(ctx, "1/1/300x300.jpg").
+		Return(false, nil)
+
 	// ожидаем сохранения двух миниатюр
 	mockFile.EXPECT().
 		Put(ctx, "1/1/100x100.jpg", gomock.Any(), "image/jpeg").

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/qesterrx/AvatarGo/internal/lerrors"
 	"github.com/qesterrx/AvatarGo/internal/middleware"
 	"github.com/qesterrx/AvatarGo/internal/models"
 )
@@ -46,10 +48,10 @@ func (h *Handlers) GetRouter() chi.Router {
 	r.Post(`/api/v1/avatars`, h.UploadAvatar)
 
 	// Получение аватарки
-	r.Get(`/api/v1/avatars/{avatar_id}`, h.GetAvatarById)
+	r.Get(`/api/v1/avatars/{avatar_id}`, h.GetAvatarByID)
 
 	// Удаление аватарки
-	r.Delete(`/api/v1/avatars/{avatar_id}`, h.DelAvatarById)
+	r.Delete(`/api/v1/avatars/{avatar_id}`, h.DeleteAvatarByID)
 
 	// Получение метаданных аватарки
 	r.Get(`/api/v1/avatars/{avatar_id}/metadata`, h.GetAvatarMetadata)
@@ -117,7 +119,7 @@ func (h *Handlers) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 }
 
 // Получение аватарки по ИД аватарки
-func (h *Handlers) GetAvatarById(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) GetAvatarByID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "avatar_id")
 	if id == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -163,7 +165,7 @@ func (h *Handlers) GetAvatarById(w http.ResponseWriter, r *http.Request) {
 }
 
 // Удаление аватарки по ИД аватарки
-func (h *Handlers) DelAvatarById(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) DeleteAvatarByID(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-ID")
 	if userID == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -183,7 +185,7 @@ func (h *Handlers) DelAvatarById(w http.ResponseWriter, r *http.Request) {
 	err := h.srv.DeleteAvatar(r.Context(), id, userID)
 	if err != nil {
 
-		if err.Error() == "forbidden" {
+		if errors.Is(err, lerrors.ErrAvatarForbidden) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(models.ErrorResponse{

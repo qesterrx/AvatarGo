@@ -3,6 +3,7 @@ module github.com/qesterrx/AvatarGo
 go 1.26.3
 
 require (
+	github.com/KarpelesLab/gowebp v0.1.1
 	github.com/aws/aws-sdk-go-v2 v1.43.5
 	github.com/aws/aws-sdk-go-v2/config v1.32.36
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.35
@@ -17,7 +18,7 @@ require (
 	github.com/rabbitmq/amqp091-go v1.14.0
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/sync v0.18.0
+	golang.org/x/sync v0.22.0
 )
 
 require (
@@ -45,7 +46,8 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	golang.org/x/crypto v0.45.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/image v0.24.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

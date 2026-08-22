@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/qesterrx/AvatarGo/internal/lerrors"
 	"github.com/qesterrx/AvatarGo/internal/models"
 	"github.com/qesterrx/AvatarGo/internal/services/mocks"
 	"github.com/stretchr/testify/assert"
@@ -98,7 +99,7 @@ func TestUploadAvatar_InvalidImage(t *testing.T) {
 	fileHeader := &multipart.FileHeader{Filename: "fake.jpg"}
 
 	_, err := srv.UploadAvatar(ctx, "user", file, fileHeader)
-	assert.ErrorIs(t, err, ErrInvalidFormat)
+	assert.ErrorIs(t, err, lerrors.ErrInvalidFormat)
 }
 
 func TestGetAvatar_Success(t *testing.T) {

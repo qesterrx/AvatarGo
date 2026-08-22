@@ -8,10 +8,10 @@ docker build -t avatargo:latest .
 ```
 4. Запустить приложение
 ```bash
-docker-compose up -d
+docker-compose -f ./docker/docker-compose.yml up -d
 ```
 
 Остановить приложение
 ```bash
-docker-compose down
+docker-compose -f ./docker/docker-compose.yml down
 ```

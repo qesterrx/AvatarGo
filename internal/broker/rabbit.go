@@ -47,49 +47,54 @@ func NewRabbitMq(cfg *config.RabbitConfig) (*RabbitMQ, error) {
 
 	chUnload, err := conn.Channel()
 	if err != nil {
-		return nil, fmt.Errorf("Ошибка создания канала: %v", err)
+		return nil, fmt.Errorf("NewRabbitMq: Error creating channel 'unload': %v", err)
 	}
 
 	// Объявляем exchange
 	if err := chUnload.ExchangeDeclare(exchange, "direct", true, false, false, false, nil); err != nil {
-		return nil, fmt.Errorf("Ошибка объявления exchange: %v", err)
+		return nil, fmt.Errorf("NewRabbitMq: Error creating exchange 'unload': %v", err)
 	}
 
 	// Объявляем очередь unload
 	_, err = chUnload.QueueDeclare(queueUnload, true, false, false, false, nil)
 	if err != nil {
-		return nil, fmt.Errorf("Ошибка объявления очереди: %v", err)
+		return nil, fmt.Errorf("NewRabbitMq: Error creating queue 'unload': %v", err)
 	}
 
 	// Привязываем очередь к exchange
 	if err := chUnload.QueueBind(queueUnload, rkeyUnload, exchange, false, nil); err != nil {
-		return nil, fmt.Errorf("Ошибка привязки очереди: %v", err)
+		return nil, fmt.Errorf("NewRabbitMq: Error binding 'unload': %v", err)
 	}
 
 	// Настройка QoS
 	if err := chUnload.Qos(1, 0, false); err != nil {
-		return nil, fmt.Errorf("Ошибка настройки QoS: %v", err)
+		return nil, fmt.Errorf("NewRabbitMq: Error set Qos 'unload': %v", err)
 	}
 
 	chDelete, err := conn.Channel()
 	if err != nil {
-		return nil, fmt.Errorf("Ошибка создания канала: %v", err)
+		return nil, fmt.Errorf("NewRabbitMq: Error creating channel 'delete': %v", err)
+	}
+
+	// Объявляем exchange
+	if err := chDelete.ExchangeDeclare(exchange, "direct", true, false, false, false, nil); err != nil {
+		return nil, fmt.Errorf("NewRabbitMq: Error creating exchange 'delete': %v", err)
 	}
 
 	// Объявляем очередь delete
 	_, err = chDelete.QueueDeclare(queueDelete, true, false, false, false, nil)
 	if err != nil {
-		return nil, fmt.Errorf("Ошибка объявления очереди: %v", err)
+		return nil, fmt.Errorf("NewRabbitMq: Error creating queue 'delete': %v", err)
 	}
 
 	// Привязываем очередь к exchange
 	if err := chDelete.QueueBind(queueDelete, rkeyDelete, exchange, false, nil); err != nil {
-		return nil, fmt.Errorf("Ошибка привязки очереди: %v", err)
+		return nil, fmt.Errorf("NewRabbitMq: Error binding 'delete': %v", err)
 	}
 
 	// Настройка QoS
 	if err := chDelete.Qos(1, 0, false); err != nil {
-		return nil, fmt.Errorf("Ошибка настройки QoS: %v", err)
+		return nil, fmt.Errorf("NewRabbitMq: Error set Qos 'delete': %v", err)
 	}
 
 	rbt := RabbitMQ{
@@ -167,7 +172,7 @@ func (rbt *RabbitMQ) GetChUnloadEvent(ctx context.Context) (<-chan *models.Avata
 			select {
 			case <-ctx.Done():
 				if err := rbt.chUnload.Cancel(consumerTag, false); err != nil {
-					logger.Log.Error("Ошибка отмены потребителя unload: %v", err)
+					logger.Log.Error("GetChUnloadEvent error cancel consume unload: %v", err)
 				}
 				return
 			case msg, ok := <-msgs:
@@ -176,7 +181,7 @@ func (rbt *RabbitMQ) GetChUnloadEvent(ctx context.Context) (<-chan *models.Avata
 				}
 				var event models.AvatarUploadEvent
 				if err := json.Unmarshal(msg.Body, &event); err != nil {
-					logger.Log.Error("Ошибка парсинга JSON: %v", err)
+					logger.Log.Error("GetChUnloadEvent error JSON: %v", err)
 					msg.Nack(false, false)
 					continue
 				}
@@ -227,7 +232,7 @@ func (rbt *RabbitMQ) GetChDeleteEvent(ctx context.Context) (<-chan *models.Avata
 			select {
 			case <-ctx.Done():
 				if err := rbt.chDelete.Cancel(consumerTag, false); err != nil {
-					logger.Log.Error("Ошибка отмены потребителя delete: %v", err)
+					logger.Log.Error("GetChDeleteEvent error cancel consume delete: %v", err)
 				}
 				return
 			case msg, ok := <-msgs:
@@ -237,7 +242,7 @@ func (rbt *RabbitMQ) GetChDeleteEvent(ctx context.Context) (<-chan *models.Avata
 
 				var event models.AvatarDeleteEvent
 				if err := json.Unmarshal(msg.Body, &event); err != nil {
-					logger.Log.Error("Ошибка парсинга JSON: %v", err)
+					logger.Log.Error("GetChDeleteEvent error JSON: %v", err)
 					msg.Nack(false, false)
 					continue
 				}
@@ -245,14 +250,14 @@ func (rbt *RabbitMQ) GetChDeleteEvent(ctx context.Context) (<-chan *models.Avata
 				ack := func() {
 					err := msg.Ack(false)
 					if err != nil {
-						logger.Log.Error("AvatarUploadEventHandle ack error: %v", err)
+						logger.Log.Error("AvatarDeleteEventHandle ack error: %v", err)
 					}
 				}
 
 				nack := func() {
 					err := msg.Nack(false, true)
 					if err != nil {
-						logger.Log.Error("AvatarUploadEventHandle nack error: %v", err)
+						logger.Log.Error("AvatarDeleteEventHandle nack error: %v", err)
 					}
 				}
 

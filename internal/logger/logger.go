@@ -38,7 +38,7 @@ func InitLogger(io io.Writer, level string) error {
 	case level == "ERROR":
 		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
 	default:
-		return fmt.Errorf("неподдерживаемый уровень логирования. Передано %s, допустимые значения [DEBUG/INFO/ERROR]", level)
+		return fmt.Errorf("unsupported level log. Got:%s, permissible values [DEBUG/INFO/ERROR]", level)
 	}
 
 	Log = Logger{log: log}

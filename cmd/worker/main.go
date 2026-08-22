@@ -23,56 +23,56 @@ func main() {
 	//Инициализация логгера
 	err := logger.InitLogger(nil, "INFO")
 	if err != nil {
-		logger.Log.Fatal("Ошибка инициализации логгера %v", err)
+		logger.Log.Fatal("Error init logger %v", err)
 	}
-	logger.Log.Info("Инициализация логгера - ОК")
+	logger.Log.Info("Init logger - ОК")
 
 	// Загружаем конфигурацию
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Log.Fatal("Ошибка конфигурации %v", err)
+		logger.Log.Fatal("Error load config %v", err)
 	}
-	logger.Log.Info("Загрузка конфигурации - ОК")
+	logger.Log.Info("Load config - ОК")
 
 	// Инициализируем репозиторий
 	pg, err := repository.NewPGClient(&cfg.Database)
 	if err != nil {
-		logger.Log.Fatal("Ошибка инициализации PGSQL клиента %v", err)
+		logger.Log.Fatal("Error init PGSQL client %v", err)
 	}
 	defer pg.Close()
-	logger.Log.Info("Инициализация PGSQL - ОК")
+	logger.Log.Info("Init PGSQL client - ОК")
 
 	// Подключаемся к S3 клиенту
 	minio, err := repository.NewS3Client(&cfg.S3)
 	if err != nil {
-		logger.Log.Fatal("Ошибка инициализации S3 клиента: %v", err)
+		logger.Log.Fatal("Error init S3 client: %v", err)
 	}
-	logger.Log.Info("Инициализация S3 - ОК")
+	logger.Log.Info("Init S3 client- ОК")
 
 	// Подключаемся к RabbitMQ
 	rbt, err := broker.NewRabbitMq(&cfg.Rabbit)
 	if err != nil {
-		logger.Log.Fatal("Ошибка инициализации RabbitMQ клиента: %v", err)
+		logger.Log.Fatal("Error init RabbitMQ client: %v", err)
 	}
 	defer rbt.Close()
-	logger.Log.Info("Инициализация RabbitMQ - ОК")
+	logger.Log.Info("Init RabbitMQ client - ОК")
 
 	// Инициализируем сервис
 	wrk, err := worker.NewAvatarWorker(pg, minio, rbt)
 	if err != nil {
-		logger.Log.Fatal("Ошибка инициализации воркера: %v", err)
+		logger.Log.Fatal("Error init workers: %v", err)
 	}
-	logger.Log.Info("Инициализация Воркера - ОК")
+	logger.Log.Info("Init workers - ОК")
 
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		logger.Log.Info("Запуск Deleting")
+		logger.Log.Info("Running Deleting")
 		return wrk.Deleting(ctx)
 	})
 
 	g.Go(func() error {
-		logger.Log.Info("Запуск Uploading")
+		logger.Log.Info("Running Uploading")
 		return wrk.Uploading(ctx)
 	})
 
@@ -83,14 +83,14 @@ func main() {
 	// Ждем сигнал завершения
 	select {
 	case <-sigChan:
-		logger.Log.Info("Получен сигнал остановки приложения")
+		logger.Log.Info("Application stop signal received")
 		cancel()
 	case <-ctx.Done():
-		logger.Log.Info("Экстренная остановка приложения")
+		logger.Log.Info("Emergency application stop")
 	}
 
 	g.Wait()
 
-	logger.Log.Info("Работа завершена")
+	logger.Log.Info("Application stopped")
 
 }

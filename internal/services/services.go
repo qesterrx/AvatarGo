@@ -13,8 +13,10 @@ import (
 	"net/http"
 	"path/filepath"
 
+	"github.com/KarpelesLab/gowebp"
 	"github.com/google/uuid"
 
+	"github.com/qesterrx/AvatarGo/internal/lerrors"
 	"github.com/qesterrx/AvatarGo/internal/logger"
 	"github.com/qesterrx/AvatarGo/internal/models"
 )
@@ -62,12 +64,12 @@ func (s *avatarService) UploadAvatar(ctx context.Context, userID string, file mu
 	// Читаем файл
 	data, err := io.ReadAll(file)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUploadFailed, err)
+		return nil, fmt.Errorf("%w: %v", lerrors.ErrUploadFailed, err)
 	}
 
 	_, _, err = image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid image content: %v", ErrInvalidFormat, err)
+		return nil, fmt.Errorf("%w: invalid image content: %v", lerrors.ErrInvalidFormat, err)
 	}
 
 	ext := filepath.Ext(fileHeader.Filename)
@@ -87,7 +89,7 @@ func (s *avatarService) UploadAvatar(ctx context.Context, userID string, file mu
 
 	// Загружаем оригинал в S3
 	if err := s.fileDB.Put(ctx, s3Key, data, mimeType); err != nil {
-		return nil, fmt.Errorf("%w: failed to put to s3: %v", ErrUploadFailed, err)
+		return nil, fmt.Errorf("%w: failed to put to s3: %v", lerrors.ErrUploadFailed, err)
 	}
 
 	// Создаем запись в БД
@@ -95,7 +97,7 @@ func (s *avatarService) UploadAvatar(ctx context.Context, userID string, file mu
 		ID:               id,
 		UserID:           userID,
 		FileName:         fileHeader.Filename,
-		MimeType:         ext,
+		MimeType:         mimeType,
 		SizeBytes:        int64(len(data)),
 		URL:              s.fileDB.GetURL(ctx, s3Key),
 		S3Key:            s3Key,
@@ -107,7 +109,7 @@ func (s *avatarService) UploadAvatar(ctx context.Context, userID string, file mu
 	if err := s.metaDB.Create(ctx, avatar); err != nil {
 		// Пытаемся удалить файл из S3 при ошибке
 		_ = s.fileDB.Del(ctx, s3Key)
-		return nil, fmt.Errorf("%w: failed to save metadata: %v", ErrUploadFailed, err)
+		return nil, fmt.Errorf("%w: failed to save metadata: %v", lerrors.ErrUploadFailed, err)
 	}
 
 	// Асинхронно генерируем миниатюры
@@ -119,7 +121,7 @@ func (s *avatarService) UploadAvatar(ctx context.Context, userID string, file mu
 
 	err = s.asyncQ.PublishUnloadEvent(&event)
 	if err != nil {
-		logger.Log.Error("Не удалось опубликовать событие для миниатюр: %v", err)
+		logger.Log.Error("UploadAvatar error publish event: %v", err)
 	}
 
 	return avatar, nil
@@ -132,7 +134,7 @@ func (s *avatarService) GetAvatar(ctx context.Context, id string, size string, f
 		return nil, "", err
 	}
 	if avatar == nil {
-		return nil, "", ErrAvatarNotFound
+		return nil, "", lerrors.ErrAvatarNotFound
 	}
 
 	// Определяем какой ключ использовать
@@ -144,7 +146,7 @@ func (s *avatarService) GetAvatar(ctx context.Context, id string, size string, f
 		if key, ok := avatar.ThumbnailS3Keys[size]; ok {
 			s3Key = key
 		} else {
-			return nil, "", ErrInvalidSize
+			return nil, "", lerrors.ErrInvalidSize
 		}
 	}
 
@@ -156,7 +158,7 @@ func (s *avatarService) GetAvatar(ctx context.Context, id string, size string, f
 
 	// Конвертируем формат если нужно
 	if format != "" && format != "jpeg" && format != "png" && format != "webp" {
-		return nil, "", ErrInvalidFormat
+		return nil, "", lerrors.ErrInvalidFormat
 	}
 
 	if format != "" {
@@ -176,7 +178,7 @@ func (s *avatarService) GetAvatarMetadata(ctx context.Context, id string) (*mode
 		return nil, err
 	}
 	if avatar == nil {
-		return nil, ErrAvatarNotFound
+		return nil, lerrors.ErrAvatarNotFound
 	}
 
 	// Получаем данные из S3 для определения размеров
@@ -222,18 +224,18 @@ func (s *avatarService) DeleteAvatar(ctx context.Context, id string, userID stri
 		return err
 	}
 	if avatar == nil {
-		return ErrAvatarNotFound
+		return lerrors.ErrAvatarNotFound
 	}
 
 	// Проверяем права
 	if avatar.UserID != userID {
-		return ErrAvatarForbidden
+		return lerrors.ErrAvatarForbidden
 	}
 
 	// Мягкое удаление из БД
 	err = s.metaDB.Delete(ctx, id)
 	if err != nil {
-		return ErrDeletingFailed
+		return lerrors.ErrDeletingFailed
 	}
 
 	//Ставим в очередь на удаление файлов
@@ -249,7 +251,7 @@ func (s *avatarService) DeleteAvatar(ctx context.Context, id string, userID stri
 
 	err = s.asyncQ.PublishDeleteEvent(&event)
 	if err != nil {
-		logger.Log.Error("Не удалось опубликовать событие для удаления: %v", err)
+		logger.Log.Error("DeleteAvatar error publish event: %v", err)
 	}
 
 	return nil
@@ -269,6 +271,8 @@ func (s *avatarService) convertImage(data []byte, toFormat string) ([]byte, erro
 		err = jpeg.Encode(buf, img, nil)
 	case "png":
 		err = png.Encode(buf, img)
+	case "webp":
+		err = gowebp.Encode(buf, img, nil)
 	default:
 		return nil, fmt.Errorf("unsupported format: %s", toFormat)
 	}

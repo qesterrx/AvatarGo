@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	"image/png"
+	"path/filepath"
+
+	"github.com/KarpelesLab/gowebp" // внешний пакет для кодирования WebP
 
 	"github.com/nfnt/resize"
 	"github.com/qesterrx/AvatarGo/internal/logger"
@@ -20,10 +24,10 @@ type MetaDB interface {
 }
 
 type FileDB interface {
+	Exists(ctx context.Context, key string) (bool, error)
 	Put(ctx context.Context, key string, data []byte, contentType string) error
 	Get(ctx context.Context, key string) ([]byte, string, error)
 	Del(ctx context.Context, key string) error
-	GetURL(ctx context.Context, key string) string
 }
 
 type Broker interface {
@@ -56,17 +60,17 @@ func (aw *avatarWorker) Uploading(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Log.Info("Остановка Uploading по контексту")
+			logger.Log.Info("Stopping Uploading by ctx")
 			return ctx.Err()
 
 		case event, ok := <-events:
 			if !ok {
 				return nil
 			}
-			logger.Log.Info("Получено событие UPLOAD %v", event.Event)
+			logger.Log.Info("Got event UPLOAD %v", event.Event)
 			err := aw.HandleUploadEvent(ctx, event.Event)
 			if err != nil {
-				logger.Log.Info("Ошибка обработки %v", err.Error())
+				logger.Log.Error("Error HandleUploadEvent %v", err.Error())
 				event.Nack()
 				continue
 			}
@@ -86,17 +90,17 @@ func (aw *avatarWorker) Deleting(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Log.Info("Остановка Deleting по контексту")
+			logger.Log.Info("Stopping Deleting by ctx")
 			return ctx.Err()
 
 		case event, ok := <-events:
 			if !ok {
 				return nil
 			}
-			logger.Log.Info("Получено событие DELETE %v", event.Event)
+			logger.Log.Info("Got event DELETE %v", event.Event)
 			err := aw.HandleDeleteEvent(ctx, event.Event)
 			if err != nil {
-				logger.Log.Info("Ошибка обработки %v", err.Error())
+				logger.Log.Error("Error HandleDeleteEvent %v", err.Error())
 				event.Nack()
 				continue
 			}
@@ -115,6 +119,8 @@ func (aw *avatarWorker) HandleUploadEvent(ctx context.Context, event *models.Ava
 		return err
 	}
 
+	ext := filepath.Ext(avatar.S3Key)
+
 	// Загружаем оригинал из S3
 	data, mime, err := aw.fileDB.Get(ctx, avatar.S3Key)
 	if err != nil {
@@ -128,10 +134,21 @@ func (aw *avatarWorker) HandleUploadEvent(ctx context.Context, event *models.Ava
 	}
 
 	// Функция для создания миниатюры
-	createThumbnail := func(size uint, img image.Image) ([]byte, error) {
+	createThumbnail := func(size uint, mimeType string, img image.Image) ([]byte, error) {
 		resized := resize.Thumbnail(size, size, img, resize.Lanczos3)
 		buf := new(bytes.Buffer)
-		err := jpeg.Encode(buf, resized, nil)
+
+		switch mimeType {
+		case "image/jpeg":
+			err = jpeg.Encode(buf, resized, nil)
+		case "image/png":
+			err = png.Encode(buf, img)
+		case "image/webp":
+			err = gowebp.Encode(buf, img, nil)
+		default:
+			return nil, fmt.Errorf("unsupported format: %s", mimeType)
+		}
+
 		return buf.Bytes(), err
 	}
 
@@ -149,15 +166,30 @@ func (aw *avatarWorker) HandleUploadEvent(ctx context.Context, event *models.Ava
 
 	// Сохраняем миниатюры в S3
 	for _, thumb := range thumbnails {
-		data, err := createThumbnail(thumb.size, img)
+		s3Key := fmt.Sprintf("%s/%s/%s%s", avatar.UserID, avatar.ID, thumb.name, ext)
+
+		//Проверка наличия файла
+		exists, err := aw.fileDB.Exists(ctx, s3Key)
 		if err != nil {
 			return err
 		}
-		s3Key := fmt.Sprintf("%s/%s/%s%s", avatar.UserID, avatar.ID, thumb.name, avatar.MimeType)
-		thumbnailKeys[thumb.name] = s3Key
-		if err := aw.fileDB.Put(ctx, s3Key, data, mime); err != nil {
-			return err
+
+		//Если файла нет -
+		if !exists {
+
+			data, err := createThumbnail(thumb.size, mime, img)
+			if err != nil {
+				return err
+			}
+
+			if err := aw.fileDB.Put(ctx, s3Key, data, mime); err != nil {
+				return err
+			}
+
 		}
+
+		thumbnailKeys[thumb.name] = s3Key
+
 	}
 
 	//Записываем ссылки на миниатюры + статус

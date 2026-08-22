@@ -101,6 +101,21 @@ func (mr *MockFileDBMockRecorder) Del(ctx, key interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Del", reflect.TypeOf((*MockFileDB)(nil).Del), ctx, key)
 }
 
+// Exists mocks base method.
+func (m *MockFileDB) Exists(ctx context.Context, key string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Exists", ctx, key)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Exists indicates an expected call of Exists.
+func (mr *MockFileDBMockRecorder) Exists(ctx, key interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Exists", reflect.TypeOf((*MockFileDB)(nil).Exists), ctx, key)
+}
+
 // Get mocks base method.
 func (m *MockFileDB) Get(ctx context.Context, key string) ([]byte, string, error) {
 	m.ctrl.T.Helper()
@@ -115,20 +130,6 @@ func (m *MockFileDB) Get(ctx context.Context, key string) ([]byte, string, error
 func (mr *MockFileDBMockRecorder) Get(ctx, key interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockFileDB)(nil).Get), ctx, key)
-}
-
-// GetURL mocks base method.
-func (m *MockFileDB) GetURL(ctx context.Context, key string) string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetURL", ctx, key)
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetURL indicates an expected call of GetURL.
-func (mr *MockFileDBMockRecorder) GetURL(ctx, key interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetURL", reflect.TypeOf((*MockFileDB)(nil).GetURL), ctx, key)
 }
 
 // Put mocks base method.
@@ -169,31 +170,31 @@ func (m *MockBroker) EXPECT() *MockBrokerMockRecorder {
 }
 
 // GetChDeleteEvent mocks base method.
-func (m *MockBroker) GetChDeleteEvent() (<-chan *models.AvatarDeleteEventHandle, error) {
+func (m *MockBroker) GetChDeleteEvent(ctx context.Context) (<-chan *models.AvatarDeleteEventHandle, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetChDeleteEvent")
+	ret := m.ctrl.Call(m, "GetChDeleteEvent", ctx)
 	ret0, _ := ret[0].(<-chan *models.AvatarDeleteEventHandle)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetChDeleteEvent indicates an expected call of GetChDeleteEvent.
-func (mr *MockBrokerMockRecorder) GetChDeleteEvent() *gomock.Call {
+func (mr *MockBrokerMockRecorder) GetChDeleteEvent(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChDeleteEvent", reflect.TypeOf((*MockBroker)(nil).GetChDeleteEvent))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChDeleteEvent", reflect.TypeOf((*MockBroker)(nil).GetChDeleteEvent), ctx)
 }
 
 // GetChUnloadEvent mocks base method.
-func (m *MockBroker) GetChUnloadEvent() (<-chan *models.AvatarUploadEventHandle, error) {
+func (m *MockBroker) GetChUnloadEvent(ctx context.Context) (<-chan *models.AvatarUploadEventHandle, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetChUnloadEvent")
+	ret := m.ctrl.Call(m, "GetChUnloadEvent", ctx)
 	ret0, _ := ret[0].(<-chan *models.AvatarUploadEventHandle)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetChUnloadEvent indicates an expected call of GetChUnloadEvent.
-func (mr *MockBrokerMockRecorder) GetChUnloadEvent() *gomock.Call {
+func (mr *MockBrokerMockRecorder) GetChUnloadEvent(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChUnloadEvent", reflect.TypeOf((*MockBroker)(nil).GetChUnloadEvent))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChUnloadEvent", reflect.TypeOf((*MockBroker)(nil).GetChUnloadEvent), ctx)
 }

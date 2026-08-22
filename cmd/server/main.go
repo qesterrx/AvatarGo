@@ -25,53 +25,53 @@ func main() {
 	//Инициализация логгера
 	err := logger.InitLogger(nil, "INFO")
 	if err != nil {
-		logger.Log.Fatal("Ошибка инициализации логгера %v", err)
+		logger.Log.Fatal("Error init logger %v", err)
 	}
-	logger.Log.Info("Инициализация логгера - ОК")
+	logger.Log.Info("Init logger - ОК")
 
 	// Загружаем конфигурацию
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Log.Fatal("Ошибка конфигурации %v", err)
+		logger.Log.Fatal("Error load config %v", err)
 	}
-	logger.Log.Info("Загрузка конфигурации - ОК")
+	logger.Log.Info("Load config - ОК")
 
 	// Инициализируем репозиторий
 	pg, err := repository.NewPGClient(&cfg.Database)
 	if err != nil {
-		logger.Log.Fatal("Ошибка инициализации PGSQL клиента %v", err)
+		logger.Log.Fatal("Error init PGSQL client %v", err)
 	}
 	defer pg.Close()
-	logger.Log.Info("Инициализация PGSQL - ОК")
+	logger.Log.Info("Init PGSQL client - ОК")
 
 	// Подключаемся к S3 клиенту
 	minio, err := repository.NewS3Client(&cfg.S3)
 	if err != nil {
-		logger.Log.Fatal("Ошибка инициализации S3 клиента: %v", err)
+		logger.Log.Fatal("Error init S3 client: %v", err)
 	}
-	logger.Log.Info("Инициализация S3 - ОК")
+	logger.Log.Info("Init S3 client- ОК")
 
 	// Подключаемся к RabbitMQ
 	rbt, err := broker.NewRabbitMq(&cfg.Rabbit)
 	if err != nil {
-		logger.Log.Fatal("Ошибка инициализации RabbitMQ клиента: %v", err)
+		logger.Log.Fatal("Error init RabbitMQ client: %v", err)
 	}
 	defer rbt.Close()
-	logger.Log.Info("Инициализация RabbitMQ - ОК")
+	logger.Log.Info("Init RabbitMQ client - ОК")
 
 	// Инициализируем сервис
 	srv, err := services.NewAvatarService(pg, minio, rbt)
 	if err != nil {
-		logger.Log.Fatal("Ошибка инициализации сервиса: %v", err)
+		logger.Log.Fatal("Error init service: %v", err)
 	}
-	logger.Log.Info("Инициализация Сервиса - ОК")
+	logger.Log.Info("Init service - ОК")
 
 	// Инициализируем хендлеры
 	hndls, err := handlers.NewHandlers(srv)
 	if err != nil {
-		logger.Log.Fatal("Ошибка инициализации обработчиков: %v", err)
+		logger.Log.Fatal("Error init handlers: %v", err)
 	}
-	logger.Log.Info("Инициализация Обработчиков - ОК")
+	logger.Log.Info("Init handlers - ОК")
 
 	// Инициализируем HTTP роутер
 	router := hndls.GetRouter()
@@ -97,7 +97,7 @@ func main() {
 		}
 		close(errCh)
 	}()
-	logger.Log.Info("Запуск сервера ...")
+	logger.Log.Info("Running server ...")
 
 	// Ожидаем сигналы для graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -106,29 +106,29 @@ func main() {
 	// Ожидаем либо сигнал, либо ошибку сервера
 	select {
 	case <-sigChan:
-		logger.Log.Info("Получен сигнал остановки")
+		logger.Log.Info("Stop signal received")
 	case err, ok := <-errCh:
 		if ok && err != nil {
-			logger.Log.Error("Сервер завершился с ошибкой: %v", err)
+			logger.Log.Error("The server terminated with an error: %v", err)
 		} else {
-			logger.Log.Info("Сервер завершился до получения сигнала")
+			logger.Log.Info("The server terminated before receiving the signal")
 		}
 		// Выходим, так как сервер уже не работает
 		return
 	}
 
-	logger.Log.Info("Остановка сервера...")
+	logger.Log.Info("Server shutdown...")
 
 	// Graceful shutdown с таймаутом
 	ctxShutdown, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelShutdown()
 
 	if err := server.Shutdown(ctxShutdown); err != nil {
-		logger.Log.Error("Сервер остановлен принудительно: %v", err)
+		logger.Log.Error("The server was forcibly stopped: %v", err)
 	}
 
 	//Дожидакемся остановки сервера
 	wg.Wait()
 
-	logger.Log.Info("Работа завершена")
+	logger.Log.Info("Application stopped")
 }

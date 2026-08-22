@@ -1,4 +1,4 @@
-package services
+package lerrors
 
 import "errors"
 

@@ -28,12 +28,8 @@ func NewS3Client(cfg *cfg.S3Config) (*S3Client, error) {
 	ctx := context.Background()
 
 	endpoint := cfg.Endpoint
-	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-		if cfg.UseSSL {
-			endpoint = "https://" + endpoint
-		} else {
-			endpoint = "http://" + endpoint
-		}
+	if !strings.HasPrefix(endpoint, "http://") {
+		endpoint = "http://" + endpoint
 	}
 
 	awsCfg, err := config.LoadDefaultConfig(ctx,
@@ -87,6 +83,27 @@ func (c *S3Client) Put(ctx context.Context, key string, data []byte, contentType
 	return nil
 }
 
+func (c *S3Client) Exists(ctx context.Context, key string) (bool, error) {
+	_, err := c.s3Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(c.bucketName),
+		Key:    aws.String(key),
+	})
+
+	if err != nil {
+		var notFound *types.NotFound
+		var noSuchKey *types.NoSuchKey
+
+		// Нет объекта или нет ключа
+		if errors.As(err, &notFound) || errors.As(err, &noSuchKey) {
+			return false, nil // объект не найден
+		}
+
+		// Другая ошибка
+		return false, err
+	}
+	return true, nil
+}
+
 func (c *S3Client) Get(ctx context.Context, key string) ([]byte, string, error) {
 	result, err := c.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(c.bucketName),
@@ -120,12 +137,12 @@ func (c *S3Client) Del(ctx context.Context, key string) error {
 
 		var noSuchKey *types.NoSuchKey
 		if errors.As(err, &noSuchKey) {
-			logger.Log.Info("Файл уже удалён или не существует: %s", key)
+			logger.Log.Info("S3.Del file has deleted: %s", key)
 			return nil
 		}
 		var notFound *types.NotFound
 		if errors.As(err, &notFound) {
-			logger.Log.Info("Файл не найден: %s", key)
+			logger.Log.Info("S3.Del file not found: %s", key)
 			return nil
 		}
 
