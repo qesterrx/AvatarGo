@@ -1,0 +1,136 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: rabbitmq_avatargo
+    ports:
+      - "5672:5672"     # AMQP для приложений
+      - "15672:15672"   # Веб-панель управления
+    networks:
+      - app-network
+    environment:
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+sbwt none +sbwtdcpu none +sbwtdio none"
+      RABBITMQ_DEFAULT_USER: rabbitmq_avatargo
+      RABBITMQ_DEFAULT_PASS: rabbitmq_avatargo
+    volumes:
+      - rabbit_data_avatargo:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+  minio:
+    image: quay.io/minio/aistor/minio:latest
+    container_name: minio_avatargo
+    ports:
+      - "9000:9000"
+      - "9001:9001"     # Веб-панель управления
+    networks:
+      - app-network
+    command: server /mnt/data --license /minio.license
+    environment:
+      MINIO_ROOT_USER: minio_avatargo
+      MINIO_ROOT_PASSWORD: minio_avatargo
+
+    volumes:
+      - minio_data_avatargo:/mnt/data
+      - ./minio/minio.license:/minio.license
+      - ./minio/certs:/etc/minio/certs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres_avatargo
+    environment:
+      POSTGRES_USER: postgres_avatargo
+      POSTGRES_PASSWORD: postgres_avatargo
+      POSTGRES_DB: avatargo
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+    volumes:
+      - postgres_data_avatargo:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d avatars || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+  avatargoserver:
+    image: avatargo:latest
+    container_name: avatargo-server
+    command: ./server
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres_avatargo
+      DB_PASSWORD: postgres_avatargo
+      DB_NAME: avatargo
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY: minio_avatargo
+      S3_SECRET_KEY: minio_avatargo
+      S3_BUCKET: avatargo
+      S3_REGION: us-east-1
+      RBT_HOST: rabbitmq
+      RBT_PORT: 5672
+      RBT_USER: rabbitmq_avatargo
+      RBT_PASSWORD: rabbitmq_avatargo
+      RBT_QUEUE: avatargo
+      SRV_HOST:
+      SRV_PORT: 8080
+    ports:
+      - "8080:8080"
+    networks:
+      - app-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+  avatargoworker:
+    image: avatargo:latest
+    container_name: avatargo-worker
+    command: ./worker
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres_avatargo
+      DB_PASSWORD: postgres_avatargo
+      DB_NAME: avatargo
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY: minio_avatargo
+      S3_SECRET_KEY: minio_avatargo
+      S3_BUCKET: avatargo
+      S3_REGION: us-east-1
+      RBT_HOST: rabbitmq
+      RBT_PORT: 5672
+      RBT_USER: rabbitmq_avatargo
+      RBT_PASSWORD: rabbitmq_avatargo
+      RBT_QUEUE: avatargo
+    networks:
+      - app-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  postgres_data_avatargo:
+  rabbit_data_avatargo:
+  minio_data_avatargo:
+
+networks:
+  app-network:
+    name: avatar-network
+    driver: bridge
