@@ -56,7 +56,7 @@ func Load() (*Config, error) {
 
 	cfg.Database.Host = getEnv("DB_HOST", "")
 	cfg.Database.Port = getEnvInt("DB_PORT", 5432)
-	cfg.Database.DBName = getEnv("DB_HOST", "avatargo")
+	cfg.Database.DBName = getEnv("DB_NAME", "avatargo")
 
 	cfg.Database.User, exists = os.LookupEnv("DB_USER")
 	if !exists {

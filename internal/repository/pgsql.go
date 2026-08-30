@@ -4,11 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"time"
 
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/lib/pq"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -17,10 +21,18 @@ import (
 )
 
 type PGClient struct {
-	db *sql.DB
+	otl *slog.Logger
+	db  *sql.DB
+
+	tracer trace.Tracer
 }
 
 func NewPGClient(cfg *config.DatabaseConfig) (*PGClient, error) {
+
+	component := "PGClient"
+
+	log := slog.With("component", component)
+	tracer := otel.Tracer(component)
 
 	dbConnStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		cfg.Host,
@@ -58,7 +70,13 @@ func NewPGClient(cfg *config.DatabaseConfig) (*PGClient, error) {
 		return nil, err
 	}
 
-	return &PGClient{db: db}, nil
+	pg := PGClient{
+		db:     db,
+		otl:    log,
+		tracer: tracer,
+	}
+
+	return &pg, nil
 }
 
 func (r *PGClient) Close() {
@@ -66,6 +84,10 @@ func (r *PGClient) Close() {
 }
 
 func (r *PGClient) Create(ctx context.Context, avatar *models.Avatar) error {
+
+	ctx, span := r.tracer.Start(ctx, "Create")
+	defer span.End()
+
 	query := `
         INSERT INTO avatars (
             id, user_id, file_name, mime_type, size_bytes, s3_key,
@@ -89,10 +111,22 @@ func (r *PGClient) Create(ctx context.Context, avatar *models.Avatar) error {
 		now,
 	).Scan(&avatar.CreatedAt, &avatar.UpdatedAt)
 
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+
+	span.SetStatus(codes.Ok, "")
+
 	return err
 }
 
 func (r *PGClient) GetByID(ctx context.Context, id string) (*models.Avatar, error) {
+
+	ctx, span := r.tracer.Start(ctx, "GetByID")
+	defer span.End()
+
 	query := `
         SELECT id, user_id, file_name, mime_type, size_bytes, s3_key,
                thumbnail_s3_keys, upload_status, processing_status,
@@ -120,9 +154,13 @@ func (r *PGClient) GetByID(ctx context.Context, id string) (*models.Avatar, erro
 	)
 
 	if err == sql.ErrNoRows {
+		span.SetStatus(codes.Ok, "NoRows")
 		return nil, nil
 	}
+
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
@@ -130,20 +168,38 @@ func (r *PGClient) GetByID(ctx context.Context, id string) (*models.Avatar, erro
 		avatar.DeletedAt = &deletedAt.Time
 	}
 
+	span.SetStatus(codes.Ok, "")
+
 	return &avatar, nil
 }
 
 func (r *PGClient) UpdateThumbnails(ctx context.Context, id string, thumbnails models.ThumbnailKeys) error {
+
+	ctx, span := r.tracer.Start(ctx, "UpdateThumbnails")
+	defer span.End()
+
 	query := `
         UPDATE avatars
         SET thumbnail_s3_keys = $2, processing_status = 'completed', updated_at = NOW()
         WHERE id = $1
     `
 	_, err := r.db.ExecContext(ctx, query, id, thumbnails)
-	return err
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+
+	span.SetStatus(codes.Ok, "")
+
+	return nil
 }
 
 func (r *PGClient) Delete(ctx context.Context, id string) error {
+
+	ctx, span := r.tracer.Start(ctx, "Delete")
+	defer span.End()
+
 	query := `
         UPDATE avatars
         SET deleted_at = NOW(), updated_at = NOW()
@@ -151,17 +207,24 @@ func (r *PGClient) Delete(ctx context.Context, id string) error {
     `
 	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 
 	if rows == 0 {
+		span.SetStatus(codes.Ok, "NoRows")
 		return nil // не найдено
 	}
+
+	span.SetStatus(codes.Ok, "")
 
 	return nil
 }

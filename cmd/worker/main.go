@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,11 +12,15 @@ import (
 	"github.com/qesterrx/AvatarGo/internal/config"
 	"github.com/qesterrx/AvatarGo/internal/logger"
 	"github.com/qesterrx/AvatarGo/internal/repository"
+	"github.com/qesterrx/AvatarGo/internal/telemetry"
 	"github.com/qesterrx/AvatarGo/internal/worker"
 	"golang.org/x/sync/errgroup"
 )
 
 func main() {
+
+	module := "avatargo-worker"
+	version := "v0.0.1"
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -27,9 +32,19 @@ func main() {
 	}
 	logger.Log.Info("Init logger - ОК")
 
+	//Инициализация OpenTelemetry логгера
+	otClose, err := telemetry.InitTelemetryProvider(ctx, module, version)
+	if err != nil {
+		logger.Log.Fatal("Error init otl %v", err)
+	}
+	defer otClose()
+	logger.Log.Info("Init logger - ОК")
+	slog.InfoContext(ctx, "Starting")
+
 	// Загружаем конфигурацию
 	cfg, err := config.Load()
 	if err != nil {
+		slog.ErrorContext(ctx, "Error load config: "+err.Error())
 		logger.Log.Fatal("Error load config %v", err)
 	}
 	logger.Log.Info("Load config - ОК")
@@ -37,6 +52,7 @@ func main() {
 	// Инициализируем репозиторий
 	pg, err := repository.NewPGClient(&cfg.Database)
 	if err != nil {
+		slog.ErrorContext(ctx, "Error init PGSQL client: "+err.Error())
 		logger.Log.Fatal("Error init PGSQL client %v", err)
 	}
 	defer pg.Close()
@@ -45,6 +61,7 @@ func main() {
 	// Подключаемся к S3 клиенту
 	minio, err := repository.NewS3Client(&cfg.S3)
 	if err != nil {
+		slog.ErrorContext(ctx, "Error init S3 client: "+err.Error())
 		logger.Log.Fatal("Error init S3 client: %v", err)
 	}
 	logger.Log.Info("Init S3 client- ОК")
@@ -52,6 +69,7 @@ func main() {
 	// Подключаемся к RabbitMQ
 	rbt, err := broker.NewRabbitMq(&cfg.Rabbit)
 	if err != nil {
+		slog.ErrorContext(ctx, "Error init RabbitMQ client: "+err.Error())
 		logger.Log.Fatal("Error init RabbitMQ client: %v", err)
 	}
 	defer rbt.Close()
@@ -76,6 +94,9 @@ func main() {
 		return wrk.Uploading(ctx)
 	})
 
+	logger.Log.Info("Application started")
+	slog.InfoContext(ctx, "Application started")
+
 	// Ожидаем сигналы для graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
@@ -83,14 +104,17 @@ func main() {
 	// Ждем сигнал завершения
 	select {
 	case <-sigChan:
+		slog.InfoContext(ctx, "Application stop signal received")
 		logger.Log.Info("Application stop signal received")
 		cancel()
 	case <-ctx.Done():
+		slog.InfoContext(ctx, "Emergency application stop")
 		logger.Log.Info("Emergency application stop")
 	}
 
 	g.Wait()
 
+	slog.InfoContext(ctx, "Application stopped")
 	logger.Log.Info("Application stopped")
 
 }

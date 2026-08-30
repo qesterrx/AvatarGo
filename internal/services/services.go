@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -15,9 +16,11 @@ import (
 
 	"github.com/KarpelesLab/gowebp"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/qesterrx/AvatarGo/internal/lerrors"
-	"github.com/qesterrx/AvatarGo/internal/logger"
 	"github.com/qesterrx/AvatarGo/internal/models"
 )
 
@@ -39,28 +42,62 @@ type FileDB interface {
 }
 
 type Broker interface {
-	PublishUnloadEvent(event *models.AvatarUploadEvent) error
-	PublishDeleteEvent(event *models.AvatarDeleteEvent) error
+	PublishUnloadEvent(ctx context.Context, event *models.AvatarUploadEvent) error
+	PublishDeleteEvent(ctx context.Context, event *models.AvatarDeleteEvent) error
 	Check() string
 }
 
 type avatarService struct {
+	otl    *slog.Logger
+	tracer trace.Tracer
+
 	metaDB MetaDB
 	fileDB FileDB
 	asyncQ Broker
+
+	//Метрики
+	UploadAvatarCalls      metric.Int64Counter
+	GetAvatarCalls         metric.Int64Counter
+	GetAvatarMetadataCalls metric.Int64Counter
+	DeleteAvatarCalls      metric.Int64Counter
 }
 
 func NewAvatarService(metaDB MetaDB, fileDB FileDB, asyncQ Broker) (*avatarService, error) {
+
+	component := "AvatarService"
+	log := slog.With("component", component)
+	tracer := otel.Tracer(component)
+
+	meter := otel.Meter("AvatarService")
+	UploadAvatarCalls, _ := meter.Int64Counter("UploadAvatarCalls")
+	GetAvatarCalls, _ := meter.Int64Counter("GetAvatarCalls")
+	GetAvatarMetadataCalls, _ := meter.Int64Counter("GetAvatarMetadataCalls")
+	DeleteAvatarCalls, _ := meter.Int64Counter("DeleteAvatarCalls")
+
 	srv := avatarService{
-		metaDB: metaDB,
-		fileDB: fileDB,
-		asyncQ: asyncQ,
+		tracer:                 tracer,
+		otl:                    log,
+		metaDB:                 metaDB,
+		fileDB:                 fileDB,
+		asyncQ:                 asyncQ,
+		UploadAvatarCalls:      UploadAvatarCalls,
+		GetAvatarCalls:         GetAvatarCalls,
+		GetAvatarMetadataCalls: GetAvatarMetadataCalls,
+		DeleteAvatarCalls:      DeleteAvatarCalls,
 	}
 
 	return &srv, nil
 }
 
 func (s *avatarService) UploadAvatar(ctx context.Context, userID string, file multipart.File, fileHeader *multipart.FileHeader) (*models.Avatar, error) {
+
+	ctx, span := s.tracer.Start(ctx, "UploadAvatar")
+	defer span.End()
+
+	s.otl.InfoContext(ctx, "call UploadAvatar userID="+userID) //TODO
+
+	s.UploadAvatarCalls.Add(ctx, 1)
+
 	// Читаем файл
 	data, err := io.ReadAll(file)
 	if err != nil {
@@ -119,15 +156,23 @@ func (s *avatarService) UploadAvatar(ctx context.Context, userID string, file mu
 		S3Key:    s3Key,
 	}
 
-	err = s.asyncQ.PublishUnloadEvent(&event)
+	err = s.asyncQ.PublishUnloadEvent(ctx, &event)
 	if err != nil {
-		logger.Log.Error("UploadAvatar error publish event: %v", err)
+		s.otl.InfoContext(ctx, "UploadAvatar error publish event: "+err.Error())
 	}
 
 	return avatar, nil
 }
 
 func (s *avatarService) GetAvatar(ctx context.Context, id string, size string, format string) ([]byte, string, error) {
+
+	ctx, span := s.tracer.Start(ctx, "GetAvatar")
+	defer span.End()
+
+	s.otl.InfoContext(ctx, "call GetAvatar id="+id) //TODO
+
+	s.GetAvatarCalls.Add(ctx, 1)
+
 	// Получаем метаданные
 	avatar, err := s.metaDB.GetByID(ctx, id)
 	if err != nil {
@@ -162,7 +207,7 @@ func (s *avatarService) GetAvatar(ctx context.Context, id string, size string, f
 	}
 
 	if format != "" {
-		converted, err := s.convertImage(data, format)
+		converted, err := s.convertImage(ctx, data, format)
 		if err != nil {
 			return nil, "", err
 		}
@@ -173,6 +218,14 @@ func (s *avatarService) GetAvatar(ctx context.Context, id string, size string, f
 }
 
 func (s *avatarService) GetAvatarMetadata(ctx context.Context, id string) (*models.AvatarMetadata, error) {
+
+	ctx, span := s.tracer.Start(ctx, "GetAvatarMetadata")
+	defer span.End()
+
+	s.otl.InfoContext(ctx, "call GetAvatarMetadata id="+id) //TODO
+
+	s.GetAvatarMetadataCalls.Add(ctx, 1)
+
 	avatar, err := s.metaDB.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -218,6 +271,14 @@ func (s *avatarService) GetAvatarMetadata(ctx context.Context, id string) (*mode
 }
 
 func (s *avatarService) DeleteAvatar(ctx context.Context, id string, userID string) error {
+
+	ctx, span := s.tracer.Start(ctx, "DeleteAvatar")
+	defer span.End()
+
+	s.otl.InfoContext(ctx, "call DeleteAvatar id="+id) //TODO
+
+	s.DeleteAvatarCalls.Add(ctx, 1)
+
 	// Получаем метаданные
 	avatar, err := s.metaDB.GetByID(ctx, id)
 	if err != nil {
@@ -249,16 +310,20 @@ func (s *avatarService) DeleteAvatar(ctx context.Context, id string, userID stri
 		S3Keys:   thumbnailS3Keys,
 	}
 
-	err = s.asyncQ.PublishDeleteEvent(&event)
+	err = s.asyncQ.PublishDeleteEvent(ctx, &event)
 	if err != nil {
-		logger.Log.Error("DeleteAvatar error publish event: %v", err)
+		s.otl.InfoContext(ctx, "DeleteAvatar error publish event: "+err.Error())
 	}
 
 	return nil
 
 }
 
-func (s *avatarService) convertImage(data []byte, toFormat string) ([]byte, error) {
+func (s *avatarService) convertImage(ctx context.Context, data []byte, toFormat string) ([]byte, error) {
+
+	ctx, span := s.tracer.Start(ctx, "convertImage")
+	defer span.End()
+
 	// Декодируем изображение
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -285,6 +350,7 @@ func (s *avatarService) convertImage(data []byte, toFormat string) ([]byte, erro
 }
 
 func (s *avatarService) getImageDimensions(data []byte) (*models.Dimensions, error) {
+
 	img, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, err

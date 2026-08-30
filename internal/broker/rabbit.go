@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/qesterrx/AvatarGo/internal/config"
-	"github.com/qesterrx/AvatarGo/internal/logger"
 	"github.com/qesterrx/AvatarGo/internal/models"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	amqp "github.com/rabbitmq/amqp091-go" // AMQP-клиент
 )
@@ -18,14 +22,24 @@ type RabbitMQ struct {
 	chUnload *amqp.Channel
 	chDelete *amqp.Channel
 
+	otl    *slog.Logger
+	tracer trace.Tracer
+
 	exchange    string
 	queueUnload string
 	rkeyUnload  string
 	queueDelete string
 	rkeyDelete  string
+
+	component string
 }
 
 func NewRabbitMq(cfg *config.RabbitConfig) (*RabbitMQ, error) {
+
+	component := "RabbitMQ"
+
+	log := slog.With("component", component)
+	tracer := otel.Tracer(component)
 	// Подключаемся к RabbitMQ
 	rabbitConnStr := fmt.Sprintf("amqp://%s:%s@%s:%d/",
 		cfg.User,
@@ -106,6 +120,9 @@ func NewRabbitMq(cfg *config.RabbitConfig) (*RabbitMQ, error) {
 		queueDelete: queueDelete,
 		rkeyDelete:  rkeyDelete,
 		exchange:    exchange,
+		otl:         log,
+		tracer:      tracer,
+		component:   component,
 	}
 
 	return &rbt, nil
@@ -117,14 +134,33 @@ func (rbt *RabbitMQ) Close() {
 	rbt.conn.Close()
 }
 
-func (rbt *RabbitMQ) PublishUnloadEvent(event *models.AvatarUploadEvent) error {
+func (rbt *RabbitMQ) PublishUnloadEvent(ctx context.Context, event *models.AvatarUploadEvent) error {
+
+	//Создаем дочерний span для операции отправки
+	ctx, span := rbt.tracer.Start(ctx, "PublishUnloadEvent")
+	defer span.End()
+
+	//Подготавливаем заголовки сообщения
+	headers := amqp.Table{}
+
+	//Инжектируем контекст трассировки в заголовки
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+
+	//Копируем из carrier в amqp.Table
+	for key, value := range carrier {
+		headers[key] = value
+	}
 
 	msg, err := json.Marshal(event)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 
-	return rbt.chUnload.Publish(
+	err = rbt.chUnload.PublishWithContext(
+		ctx,
 		rbt.exchange,
 		rbt.rkeyUnload,
 		false,
@@ -132,18 +168,46 @@ func (rbt *RabbitMQ) PublishUnloadEvent(event *models.AvatarUploadEvent) error {
 		amqp.Publishing{
 			ContentType: "application/json",
 			Body:        msg,
+			Headers:     headers,
 		},
 	)
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("failed to publish: %w", err)
+	}
+
+	span.SetStatus(codes.Ok, "")
+	return nil
 }
 
-func (rbt *RabbitMQ) PublishDeleteEvent(event *models.AvatarDeleteEvent) error {
+func (rbt *RabbitMQ) PublishDeleteEvent(ctx context.Context, event *models.AvatarDeleteEvent) error {
+
+	//Создаем дочерний span для операции отправки
+	ctx, span := rbt.tracer.Start(ctx, "PublishDeleteEvent")
+	defer span.End()
+
+	//Подготавливаем заголовки сообщения
+	headers := amqp.Table{}
+
+	//Инжектируем контекст трассировки в заголовки
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+
+	//Копируем из carrier в amqp.Table
+	for key, value := range carrier {
+		headers[key] = value
+	}
 
 	msg, err := json.Marshal(event)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 
-	return rbt.chDelete.Publish(
+	err = rbt.chDelete.Publish(
 		rbt.exchange,
 		rbt.rkeyDelete,
 		false,
@@ -151,8 +215,19 @@ func (rbt *RabbitMQ) PublishDeleteEvent(event *models.AvatarDeleteEvent) error {
 		amqp.Publishing{
 			ContentType: "application/json",
 			Body:        msg,
+			Headers:     headers,
 		},
 	)
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+
+	span.SetStatus(codes.Ok, "")
+
+	return nil
 }
 
 func (rbt *RabbitMQ) GetChUnloadEvent(ctx context.Context) (<-chan *models.AvatarUploadEventHandle, error) {
@@ -172,16 +247,32 @@ func (rbt *RabbitMQ) GetChUnloadEvent(ctx context.Context) (<-chan *models.Avata
 			select {
 			case <-ctx.Done():
 				if err := rbt.chUnload.Cancel(consumerTag, false); err != nil {
-					logger.Log.Error("GetChUnloadEvent error cancel consume unload: %v", err)
+					rbt.otl.ErrorContext(ctx, "GetChUnloadEvent error cancel consume unload: "+err.Error())
 				}
 				return
 			case msg, ok := <-msgs:
 				if !ok {
 					return
 				}
+
+				headers := make(map[string]string)
+				for key, value := range msg.Headers {
+					if strVal, ok := value.(string); ok {
+						headers[key] = strVal
+					}
+				}
+
+				// Извлекаем родительский span из заголовков
+				parentCtx := otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(headers))
+
+				// Создаем дочерний span для обработки сообщения
+				receiveCtx, receiveSpan := rbt.tracer.Start(parentCtx, "GetChUnloadEvent")
+				defer receiveSpan.End()
+
 				var event models.AvatarUploadEvent
 				if err := json.Unmarshal(msg.Body, &event); err != nil {
-					logger.Log.Error("GetChUnloadEvent error JSON: %v", err)
+					rbt.otl.ErrorContext(ctx, "GetChUnloadEvent error JSON: "+err.Error())
+					receiveSpan.RecordError(fmt.Errorf("GetChUnloadEvent error JSON: %v", err))
 					msg.Nack(false, false)
 					continue
 				}
@@ -189,14 +280,16 @@ func (rbt *RabbitMQ) GetChUnloadEvent(ctx context.Context) (<-chan *models.Avata
 				ack := func() {
 					err := msg.Ack(false)
 					if err != nil {
-						logger.Log.Error("AvatarUploadEventHandle ack error: %v", err)
+						receiveSpan.RecordError(fmt.Errorf("AvatarUploadEventHandle ack error: %v", err))
+						rbt.otl.ErrorContext(ctx, "AvatarUploadEventHandle ack error: "+err.Error())
 					}
 				}
 
 				nack := func() {
 					err := msg.Nack(false, true)
 					if err != nil {
-						logger.Log.Error("AvatarUploadEventHandle nack error: %v", err)
+						receiveSpan.RecordError(fmt.Errorf("AvatarUploadEventHandle nack error: %v", err))
+						rbt.otl.ErrorContext(ctx, "AvatarUploadEventHandle nack error: "+err.Error())
 					}
 				}
 
@@ -204,6 +297,7 @@ func (rbt *RabbitMQ) GetChUnloadEvent(ctx context.Context) (<-chan *models.Avata
 					Event: &event,
 					Ack:   ack,
 					Nack:  nack,
+					Ctx:   receiveCtx,
 				}
 
 				queue <- &eventH
@@ -232,7 +326,7 @@ func (rbt *RabbitMQ) GetChDeleteEvent(ctx context.Context) (<-chan *models.Avata
 			select {
 			case <-ctx.Done():
 				if err := rbt.chDelete.Cancel(consumerTag, false); err != nil {
-					logger.Log.Error("GetChDeleteEvent error cancel consume delete: %v", err)
+					rbt.otl.ErrorContext(ctx, "GetChDeleteEvent error cancel consume delete: "+err.Error())
 				}
 				return
 			case msg, ok := <-msgs:
@@ -240,9 +334,24 @@ func (rbt *RabbitMQ) GetChDeleteEvent(ctx context.Context) (<-chan *models.Avata
 					return
 				}
 
+				headers := make(map[string]string)
+				for key, value := range msg.Headers {
+					if strVal, ok := value.(string); ok {
+						headers[key] = strVal
+					}
+				}
+
+				// Извлекаем родительский span из заголовков
+				parentCtx := otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(headers))
+
+				// Создаем дочерний span для обработки сообщения
+				receiveCtx, receiveSpan := rbt.tracer.Start(parentCtx, "GetChUnloadEvent")
+				defer receiveSpan.End()
+
 				var event models.AvatarDeleteEvent
 				if err := json.Unmarshal(msg.Body, &event); err != nil {
-					logger.Log.Error("GetChDeleteEvent error JSON: %v", err)
+					rbt.otl.ErrorContext(ctx, "GetChDeleteEvent error JSON: "+err.Error())
+					receiveSpan.RecordError(fmt.Errorf("GetChDeleteEvent error JSON: %v", err))
 					msg.Nack(false, false)
 					continue
 				}
@@ -250,14 +359,16 @@ func (rbt *RabbitMQ) GetChDeleteEvent(ctx context.Context) (<-chan *models.Avata
 				ack := func() {
 					err := msg.Ack(false)
 					if err != nil {
-						logger.Log.Error("AvatarDeleteEventHandle ack error: %v", err)
+						rbt.otl.ErrorContext(ctx, "AvatarDeleteEventHandle ack error: "+err.Error())
+						receiveSpan.RecordError(fmt.Errorf("AvatarDeleteEventHandle ack error: %v", err))
 					}
 				}
 
 				nack := func() {
 					err := msg.Nack(false, true)
 					if err != nil {
-						logger.Log.Error("AvatarDeleteEventHandle nack error: %v", err)
+						rbt.otl.ErrorContext(ctx, "AvatarDeleteEventHandle nack error: "+err.Error())
+						receiveSpan.RecordError(fmt.Errorf("AvatarDeleteEventHandle nack error: %v", err))
 					}
 				}
 
@@ -265,6 +376,7 @@ func (rbt *RabbitMQ) GetChDeleteEvent(ctx context.Context) (<-chan *models.Avata
 					Event: &event,
 					Ack:   ack,
 					Nack:  nack,
+					Ctx:   receiveCtx,
 				}
 
 				queue <- &eventH

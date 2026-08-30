@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -13,8 +14,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/qesterrx/AvatarGo/internal/lerrors"
-	"github.com/qesterrx/AvatarGo/internal/middleware"
 	"github.com/qesterrx/AvatarGo/internal/models"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const MaxFileSize = 10 * 1024 * 1024
@@ -29,20 +30,21 @@ type Service interface {
 }
 
 type Handlers struct {
+	otl *slog.Logger
 	srv Service
 }
 
 func NewHandlers(srv Service) (*Handlers, error) {
-
-	h := Handlers{srv: srv}
+	log := slog.With("component", "Handlers")
+	h := Handlers{otl: log, srv: srv}
 
 	return &h, nil
 }
 
-func (h *Handlers) GetRouter() chi.Router {
+func (h *Handlers) GetRouter(module string) chi.Router {
 	r := chi.NewRouter()
 
-	r.Use(middleware.LoggingMiddleware)
+	r.Use(otelhttp.NewMiddleware(module))
 
 	// Загрузка аватарки
 	r.Post(`/api/v1/avatars`, h.UploadAvatar)
@@ -79,7 +81,7 @@ func (h *Handlers) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
 		json.NewEncoder(w).Encode(models.ErrorResponse{
-			Error:   "File too large",
+			Error:   fmt.Sprintf("File too large (got %d)", r.ContentLength),
 			MaxSize: MaxFileSize,
 		})
 		return
