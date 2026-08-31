@@ -156,7 +156,7 @@ func (rbt *RabbitMQ) PublishUnloadEvent(ctx context.Context, event *models.Avata
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return fmt.Errorf("error marshall event: %v", err)
 	}
 
 	err = rbt.chUnload.PublishWithContext(
@@ -175,7 +175,7 @@ func (rbt *RabbitMQ) PublishUnloadEvent(ctx context.Context, event *models.Avata
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return fmt.Errorf("failed to publish: %w", err)
+		return fmt.Errorf("error publish event: %v", err)
 	}
 
 	span.SetStatus(codes.Ok, "")
@@ -204,7 +204,7 @@ func (rbt *RabbitMQ) PublishDeleteEvent(ctx context.Context, event *models.Avata
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return fmt.Errorf("error marshall event: %v", err)
 	}
 
 	err = rbt.chDelete.Publish(
@@ -222,7 +222,7 @@ func (rbt *RabbitMQ) PublishDeleteEvent(ctx context.Context, event *models.Avata
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return fmt.Errorf("error publish event: %v", err)
 	}
 
 	span.SetStatus(codes.Ok, "")
@@ -234,6 +234,7 @@ func (rbt *RabbitMQ) GetChUnloadEvent(ctx context.Context) (<-chan *models.Avata
 	consumerTag := "unload-event-reader"
 	msgs, err := rbt.chUnload.Consume(rbt.queueUnload, consumerTag, false, false, false, false, nil)
 	if err != nil {
+		rbt.otl.ErrorContext(ctx, "error consume unload", slog.String("method", "GetChUnloadEvent"), slog.Any("error", err))
 		return nil, err
 	}
 
@@ -247,7 +248,7 @@ func (rbt *RabbitMQ) GetChUnloadEvent(ctx context.Context) (<-chan *models.Avata
 			select {
 			case <-ctx.Done():
 				if err := rbt.chUnload.Cancel(consumerTag, false); err != nil {
-					rbt.otl.ErrorContext(ctx, "GetChUnloadEvent error cancel consume unload: "+err.Error())
+					rbt.otl.ErrorContext(ctx, "error cancel consume unload", slog.String("method", "GetChUnloadEvent"), slog.Any("error", err))
 				}
 				return
 			case msg, ok := <-msgs:
@@ -267,29 +268,31 @@ func (rbt *RabbitMQ) GetChUnloadEvent(ctx context.Context) (<-chan *models.Avata
 
 				// Создаем дочерний span для обработки сообщения
 				receiveCtx, receiveSpan := rbt.tracer.Start(parentCtx, "GetChUnloadEvent")
-				defer receiveSpan.End()
 
 				var event models.AvatarUploadEvent
 				if err := json.Unmarshal(msg.Body, &event); err != nil {
-					rbt.otl.ErrorContext(ctx, "GetChUnloadEvent error JSON: "+err.Error())
+					rbt.otl.ErrorContext(ctx, "error unmarshal msg", slog.String("method", "GetChUnloadEvent"), slog.String("params", fmt.Sprintf("msg %v", msg)), slog.Any("error", err))
 					receiveSpan.RecordError(fmt.Errorf("GetChUnloadEvent error JSON: %v", err))
 					msg.Nack(false, false)
+					receiveSpan.End()
 					continue
 				}
 
 				ack := func() {
 					err := msg.Ack(false)
 					if err != nil {
+						rbt.otl.ErrorContext(ctx, "error ack", slog.String("method", "GetChUnloadEvent"), slog.String("params", fmt.Sprintf("msg %v", msg)), slog.Any("error", err))
 						receiveSpan.RecordError(fmt.Errorf("AvatarUploadEventHandle ack error: %v", err))
-						rbt.otl.ErrorContext(ctx, "AvatarUploadEventHandle ack error: "+err.Error())
+						receiveSpan.End()
 					}
 				}
 
 				nack := func() {
 					err := msg.Nack(false, true)
 					if err != nil {
+						rbt.otl.ErrorContext(ctx, "error nack", slog.String("method", "GetChUnloadEvent"), slog.String("params", fmt.Sprintf("msg %v", msg)), slog.Any("error", err))
 						receiveSpan.RecordError(fmt.Errorf("AvatarUploadEventHandle nack error: %v", err))
-						rbt.otl.ErrorContext(ctx, "AvatarUploadEventHandle nack error: "+err.Error())
+						receiveSpan.End()
 					}
 				}
 
@@ -313,6 +316,7 @@ func (rbt *RabbitMQ) GetChDeleteEvent(ctx context.Context) (<-chan *models.Avata
 	consumerTag := "delete-event-reader"
 	msgs, err := rbt.chDelete.Consume(rbt.queueDelete, "delete-event-reader", false, false, false, false, nil)
 	if err != nil {
+		rbt.otl.ErrorContext(ctx, "error consume delete", slog.String("method", "GetChDeleteEvent"), slog.Any("error", err))
 		return nil, err
 	}
 
@@ -326,7 +330,7 @@ func (rbt *RabbitMQ) GetChDeleteEvent(ctx context.Context) (<-chan *models.Avata
 			select {
 			case <-ctx.Done():
 				if err := rbt.chDelete.Cancel(consumerTag, false); err != nil {
-					rbt.otl.ErrorContext(ctx, "GetChDeleteEvent error cancel consume delete: "+err.Error())
+					rbt.otl.ErrorContext(ctx, "error cancel consume delete", slog.String("method", "GetChDeleteEvent"), slog.Any("error", err))
 				}
 				return
 			case msg, ok := <-msgs:
@@ -345,13 +349,13 @@ func (rbt *RabbitMQ) GetChDeleteEvent(ctx context.Context) (<-chan *models.Avata
 				parentCtx := otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(headers))
 
 				// Создаем дочерний span для обработки сообщения
-				receiveCtx, receiveSpan := rbt.tracer.Start(parentCtx, "GetChUnloadEvent")
-				defer receiveSpan.End()
+				receiveCtx, receiveSpan := rbt.tracer.Start(parentCtx, "GetChDeleteEvent")
 
 				var event models.AvatarDeleteEvent
 				if err := json.Unmarshal(msg.Body, &event); err != nil {
-					rbt.otl.ErrorContext(ctx, "GetChDeleteEvent error JSON: "+err.Error())
+					rbt.otl.ErrorContext(ctx, "error unmarshal msg", slog.String("method", "GetChDeleteEvent"), slog.String("params", fmt.Sprintf("msg %v", msg)), slog.Any("error", err))
 					receiveSpan.RecordError(fmt.Errorf("GetChDeleteEvent error JSON: %v", err))
+					receiveSpan.End()
 					msg.Nack(false, false)
 					continue
 				}
@@ -359,16 +363,18 @@ func (rbt *RabbitMQ) GetChDeleteEvent(ctx context.Context) (<-chan *models.Avata
 				ack := func() {
 					err := msg.Ack(false)
 					if err != nil {
-						rbt.otl.ErrorContext(ctx, "AvatarDeleteEventHandle ack error: "+err.Error())
+						rbt.otl.ErrorContext(ctx, "error ack", slog.String("method", "GetChDeleteEvent"), slog.String("params", fmt.Sprintf("msg %v", msg)), slog.Any("error", err))
 						receiveSpan.RecordError(fmt.Errorf("AvatarDeleteEventHandle ack error: %v", err))
+						receiveSpan.End()
 					}
 				}
 
 				nack := func() {
 					err := msg.Nack(false, true)
 					if err != nil {
-						rbt.otl.ErrorContext(ctx, "AvatarDeleteEventHandle nack error: "+err.Error())
+						rbt.otl.ErrorContext(ctx, "error nack", slog.String("method", "GetChDeleteEvent"), slog.String("params", fmt.Sprintf("msg %v", msg)), slog.Any("error", err))
 						receiveSpan.RecordError(fmt.Errorf("AvatarDeleteEventHandle nack error: %v", err))
+						receiveSpan.End()
 					}
 				}
 

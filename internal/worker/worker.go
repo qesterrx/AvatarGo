@@ -12,6 +12,7 @@ import (
 
 	"github.com/KarpelesLab/gowebp" // внешний пакет для кодирования WebP
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/nfnt/resize"
@@ -39,10 +40,14 @@ type Broker interface {
 
 type avatarWorker struct {
 	otl    *slog.Logger
+	tracer trace.Tracer
+
 	metaDB MetaDB
 	fileDB FileDB
 	asyncQ Broker
-	tracer trace.Tracer
+
+	mUploadingCalls metric.Int64Counter
+	mDeletingCalls  metric.Int64Counter
 }
 
 func NewAvatarWorker(metaDB MetaDB, fileDB FileDB, asyncQ Broker) (*avatarWorker, error) {
@@ -51,12 +56,24 @@ func NewAvatarWorker(metaDB MetaDB, fileDB FileDB, asyncQ Broker) (*avatarWorker
 	log := slog.With("component", component)
 	tracer := otel.Tracer(component)
 
+	meter := otel.Meter(component)
+	mUploadingCalls, err := meter.Int64Counter("wrk.uploading.calls")
+	if err != nil {
+		return nil, fmt.Errorf("creating metric uploading: %v", err)
+	}
+	mDeletingCalls, err := meter.Int64Counter("wrk.deleting.calls")
+	if err != nil {
+		return nil, fmt.Errorf("creating metric deleting: %v", err)
+	}
+
 	srv := avatarWorker{
-		metaDB: metaDB,
-		fileDB: fileDB,
-		asyncQ: asyncQ,
-		otl:    log,
-		tracer: tracer,
+		metaDB:          metaDB,
+		fileDB:          fileDB,
+		asyncQ:          asyncQ,
+		otl:             log,
+		tracer:          tracer,
+		mUploadingCalls: mUploadingCalls,
+		mDeletingCalls:  mDeletingCalls,
 	}
 
 	return &srv, nil
@@ -72,7 +89,7 @@ func (aw *avatarWorker) Uploading(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 
-			aw.otl.InfoContext(ctx, "Stopping Uploading by ctx")
+			aw.otl.InfoContext(ctx, "Stopping by ctx", slog.String("method", "Uploading"))
 			return ctx.Err()
 
 		case event, ok := <-events:
@@ -80,14 +97,13 @@ func (aw *avatarWorker) Uploading(ctx context.Context) error {
 				return nil
 			}
 
-			meter := otel.Meter("Worker-Uploading")
-			counter, _ := meter.Int64Counter("calls")
-			counter.Add(ctx, 1)
+			aw.mUploadingCalls.Add(ctx, 1)
 
-			aw.otl.InfoContext(ctx, fmt.Sprintf("Got event UPLOAD %v", event.Event))
+			aw.otl.InfoContext(ctx, "Get event", slog.String("method", "Uploading"), slog.String("params", fmt.Sprintf("event %v", event)))
+
 			err := aw.HandleUploadEvent(event.Ctx, event.Event)
 			if err != nil {
-				aw.otl.ErrorContext(ctx, "Error HandleUploadEvent: "+err.Error())
+				aw.otl.ErrorContext(ctx, "error handle event", slog.String("method", "Deleting"), slog.String("params", fmt.Sprintf("event %v", event)), slog.Any("error", err))
 				event.Nack()
 				continue
 			}
@@ -107,7 +123,7 @@ func (aw *avatarWorker) Deleting(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			aw.otl.InfoContext(ctx, "Stopping Deleting by ctx")
+			aw.otl.InfoContext(ctx, "Stopping by ctx", slog.String("method", "Deleting"))
 			return ctx.Err()
 
 		case event, ok := <-events:
@@ -116,14 +132,13 @@ func (aw *avatarWorker) Deleting(ctx context.Context) error {
 				return nil
 			}
 
-			meter := otel.Meter("Worker-Deleting")
-			counter, _ := meter.Int64Counter("calls")
-			counter.Add(ctx, 1)
+			aw.mDeletingCalls.Add(ctx, 1)
 
-			aw.otl.InfoContext(ctx, fmt.Sprintf("Got event DELETE %v", event.Event))
+			aw.otl.InfoContext(ctx, "Get event", slog.String("method", "Deleting"), slog.String("params", fmt.Sprintf("event %v", event)))
+
 			err := aw.HandleDeleteEvent(event.Ctx, event.Event)
 			if err != nil {
-				aw.otl.ErrorContext(ctx, "Error HandleDeleteEvent: "+err.Error())
+				aw.otl.ErrorContext(ctx, "error handle event", slog.String("method", "Deleting"), slog.String("params", fmt.Sprintf("event %v", event)), slog.Any("error", err))
 				event.Nack()
 				continue
 			}

@@ -95,7 +95,7 @@ func (c *S3Client) Put(ctx context.Context, key string, data []byte, contentType
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return fmt.Errorf("error put object: %v", err)
 	}
 
 	span.SetStatus(codes.Ok, "")
@@ -125,8 +125,7 @@ func (c *S3Client) Exists(ctx context.Context, key string) (bool, error) {
 
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		// Другая ошибка
-		return false, err
+		return false, fmt.Errorf("error find object: %v", err)
 	}
 
 	span.SetStatus(codes.Ok, "Found")
@@ -146,7 +145,7 @@ func (c *S3Client) Get(ctx context.Context, key string) ([]byte, string, error) 
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return nil, "", err
+		return nil, "", fmt.Errorf("error get object: %v", err)
 	}
 	defer result.Body.Close()
 
@@ -154,7 +153,7 @@ func (c *S3Client) Get(ctx context.Context, key string) ([]byte, string, error) 
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return nil, "", err
+		return nil, "", fmt.Errorf("error read body: %v", err)
 	}
 
 	contentType := ""
@@ -181,20 +180,18 @@ func (c *S3Client) Del(ctx context.Context, key string) error {
 
 		var noSuchKey *types.NoSuchKey
 		if errors.As(err, &noSuchKey) {
-			c.otl.InfoContext(ctx, "S3.Del file has deleted: "+err.Error())
 			span.SetStatus(codes.Ok, "HasDeleted")
 			return nil
 		}
 		var notFound *types.NotFound
 		if errors.As(err, &notFound) {
-			c.otl.InfoContext(ctx, "S3.Del file not found: "+err.Error())
 			span.SetStatus(codes.Ok, "NotFound")
 			return nil
 		}
 
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return fmt.Errorf("error delete file: %v", err)
 
 	}
 
