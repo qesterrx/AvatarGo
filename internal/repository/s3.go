@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	cfg "github.com/qesterrx/AvatarGo/internal/config"
-	"github.com/qesterrx/AvatarGo/internal/logger"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -19,11 +22,16 @@ import (
 )
 
 type S3Client struct {
+	otl        *slog.Logger
 	s3Client   *s3.Client
 	bucketName string
+	tracer     trace.Tracer
 }
 
 func NewS3Client(cfg *cfg.S3Config) (*S3Client, error) {
+	component := "S3Client"
+	log := slog.With("component", component)
+	tracer := otel.Tracer(component)
 
 	ctx := context.Background()
 
@@ -61,13 +69,21 @@ func NewS3Client(cfg *cfg.S3Config) (*S3Client, error) {
 		}
 	}
 
-	return &S3Client{
+	s3 := S3Client{
 		s3Client:   s3Client,
 		bucketName: cfg.BucketName,
-	}, nil
+		otl:        log,
+		tracer:     tracer,
+	}
+
+	return &s3, nil
 }
 
 func (c *S3Client) Put(ctx context.Context, key string, data []byte, contentType string) error {
+
+	ctx, span := c.tracer.Start(ctx, "Put")
+	defer span.End()
+
 	_, err := c.s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(c.bucketName),
 		Key:           aws.String(key),
@@ -77,13 +93,21 @@ func (c *S3Client) Put(ctx context.Context, key string, data []byte, contentType
 	})
 
 	if err != nil {
-		return err
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("error put object: %v", err)
 	}
+
+	span.SetStatus(codes.Ok, "")
 
 	return nil
 }
 
 func (c *S3Client) Exists(ctx context.Context, key string) (bool, error) {
+
+	ctx, span := c.tracer.Start(ctx, "Exists")
+	defer span.End()
+
 	_, err := c.s3Client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(c.bucketName),
 		Key:    aws.String(key),
@@ -95,28 +119,41 @@ func (c *S3Client) Exists(ctx context.Context, key string) (bool, error) {
 
 		// Нет объекта или нет ключа
 		if errors.As(err, &notFound) || errors.As(err, &noSuchKey) {
+			span.SetStatus(codes.Ok, "NotFound")
 			return false, nil // объект не найден
 		}
 
-		// Другая ошибка
-		return false, err
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return false, fmt.Errorf("error find object: %v", err)
 	}
+
+	span.SetStatus(codes.Ok, "Found")
+
 	return true, nil
 }
 
 func (c *S3Client) Get(ctx context.Context, key string) ([]byte, string, error) {
+
+	ctx, span := c.tracer.Start(ctx, "Get")
+	defer span.End()
+
 	result, err := c.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(c.bucketName),
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		return nil, "", err
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, "", fmt.Errorf("error get object: %v", err)
 	}
 	defer result.Body.Close()
 
 	data, err := io.ReadAll(result.Body)
 	if err != nil {
-		return nil, "", err
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, "", fmt.Errorf("error read body: %v", err)
 	}
 
 	contentType := ""
@@ -124,10 +161,16 @@ func (c *S3Client) Get(ctx context.Context, key string) ([]byte, string, error) 
 		contentType = *result.ContentType
 	}
 
+	span.SetStatus(codes.Ok, "")
+
 	return data, contentType, nil
 }
 
 func (c *S3Client) Del(ctx context.Context, key string) error {
+
+	ctx, span := c.tracer.Start(ctx, "Del")
+	defer span.End()
+
 	_, err := c.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(c.bucketName),
 		Key:    aws.String(key),
@@ -137,26 +180,36 @@ func (c *S3Client) Del(ctx context.Context, key string) error {
 
 		var noSuchKey *types.NoSuchKey
 		if errors.As(err, &noSuchKey) {
-			logger.Log.Info("S3.Del file has deleted: %s", key)
+			span.SetStatus(codes.Ok, "HasDeleted")
 			return nil
 		}
 		var notFound *types.NotFound
 		if errors.As(err, &notFound) {
-			logger.Log.Info("S3.Del file not found: %s", key)
+			span.SetStatus(codes.Ok, "NotFound")
 			return nil
 		}
 
-		return err
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("error delete file: %v", err)
 
 	}
+
+	span.SetStatus(codes.Ok, "")
 
 	return nil
 }
 
 func (c *S3Client) GetURL(ctx context.Context, key string) string {
+
+	ctx, span := c.tracer.Start(ctx, "GetURL")
+	defer span.End()
+	defer span.SetStatus(codes.Ok, "")
+
 	if c.s3Client.Options().BaseEndpoint != nil {
 		return fmt.Sprintf("%s/%s/%s", *c.s3Client.Options().BaseEndpoint, c.bucketName, key)
 	}
+
 	return fmt.Sprintf("%s/%s/%s", "", c.bucketName, key)
 }
 

@@ -1,5 +1,7 @@
 package models
 
+import "context"
+
 type AvatarUploadEvent struct {
 	AvatarID string `json:"avatar_id"`
 	UserID   string `json:"user_id"`
@@ -15,10 +17,12 @@ type AvatarUploadEventHandle struct {
 	Event *AvatarUploadEvent
 	Ack   func()
 	Nack  func()
+	Ctx   context.Context
 }
 
 type AvatarDeleteEventHandle struct {
 	Event *AvatarDeleteEvent
 	Ack   func()
 	Nack  func()
+	Ctx   context.Context
 }

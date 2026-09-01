@@ -225,29 +225,29 @@ func (mr *MockBrokerMockRecorder) Check() *gomock.Call {
 }
 
 // PublishDeleteEvent mocks base method.
-func (m *MockBroker) PublishDeleteEvent(event *models.AvatarDeleteEvent) error {
+func (m *MockBroker) PublishDeleteEvent(ctx context.Context, event *models.AvatarDeleteEvent) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PublishDeleteEvent", event)
+	ret := m.ctrl.Call(m, "PublishDeleteEvent", ctx, event)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // PublishDeleteEvent indicates an expected call of PublishDeleteEvent.
-func (mr *MockBrokerMockRecorder) PublishDeleteEvent(event interface{}) *gomock.Call {
+func (mr *MockBrokerMockRecorder) PublishDeleteEvent(ctx, event interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishDeleteEvent", reflect.TypeOf((*MockBroker)(nil).PublishDeleteEvent), event)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishDeleteEvent", reflect.TypeOf((*MockBroker)(nil).PublishDeleteEvent), ctx, event)
 }
 
 // PublishUnloadEvent mocks base method.
-func (m *MockBroker) PublishUnloadEvent(event *models.AvatarUploadEvent) error {
+func (m *MockBroker) PublishUnloadEvent(ctx context.Context, event *models.AvatarUploadEvent) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PublishUnloadEvent", event)
+	ret := m.ctrl.Call(m, "PublishUnloadEvent", ctx, event)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // PublishUnloadEvent indicates an expected call of PublishUnloadEvent.
-func (mr *MockBrokerMockRecorder) PublishUnloadEvent(event interface{}) *gomock.Call {
+func (mr *MockBrokerMockRecorder) PublishUnloadEvent(ctx, event interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishUnloadEvent", reflect.TypeOf((*MockBroker)(nil).PublishUnloadEvent), event)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishUnloadEvent", reflect.TypeOf((*MockBroker)(nil).PublishUnloadEvent), ctx, event)
 }

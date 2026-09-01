@@ -3,78 +3,88 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/qesterrx/AvatarGo/internal/broker"
 	"github.com/qesterrx/AvatarGo/internal/config"
-	"github.com/qesterrx/AvatarGo/internal/logger"
 	"github.com/qesterrx/AvatarGo/internal/repository"
+	"github.com/qesterrx/AvatarGo/internal/telemetry"
 	"github.com/qesterrx/AvatarGo/internal/worker"
 	"golang.org/x/sync/errgroup"
 )
 
 func main() {
 
+	module := "avatargo-worker"
+	version := "v0.0.1"
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	//Инициализация логгера
-	err := logger.InitLogger(nil, "INFO")
+	//Инициализация OpenTelemetry логгера
+	otClose, err := telemetry.InitTelemetryProvider(ctx, module, version)
 	if err != nil {
-		logger.Log.Fatal("Error init logger %v", err)
+		log.Fatal(fmt.Printf("Error init otl %v", err))
 	}
-	logger.Log.Info("Init logger - ОК")
+	defer otClose()
+	slog.InfoContext(ctx, "Starting")
 
 	// Загружаем конфигурацию
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Log.Fatal("Error load config %v", err)
+		slog.ErrorContext(ctx, "Error load config: "+err.Error())
+		log.Fatal(fmt.Printf("Error load config %v", err))
 	}
-	logger.Log.Info("Load config - ОК")
 
 	// Инициализируем репозиторий
 	pg, err := repository.NewPGClient(&cfg.Database)
 	if err != nil {
-		logger.Log.Fatal("Error init PGSQL client %v", err)
+		slog.ErrorContext(ctx, "Error init PGSQL client: "+err.Error())
+		log.Fatal(fmt.Printf("Error init PGSQL client %v", err))
 	}
 	defer pg.Close()
-	logger.Log.Info("Init PGSQL client - ОК")
 
 	// Подключаемся к S3 клиенту
 	minio, err := repository.NewS3Client(&cfg.S3)
 	if err != nil {
-		logger.Log.Fatal("Error init S3 client: %v", err)
+		slog.ErrorContext(ctx, "Error init S3 client: "+err.Error())
+		log.Fatal(fmt.Printf("Error init S3 client: %v", err))
 	}
-	logger.Log.Info("Init S3 client- ОК")
 
 	// Подключаемся к RabbitMQ
 	rbt, err := broker.NewRabbitMq(&cfg.Rabbit)
 	if err != nil {
-		logger.Log.Fatal("Error init RabbitMQ client: %v", err)
+		slog.ErrorContext(ctx, "Error init RabbitMQ client: "+err.Error())
+		log.Fatal(fmt.Printf("Error init RabbitMQ client: %v", err))
 	}
 	defer rbt.Close()
-	logger.Log.Info("Init RabbitMQ client - ОК")
 
 	// Инициализируем сервис
 	wrk, err := worker.NewAvatarWorker(pg, minio, rbt)
 	if err != nil {
-		logger.Log.Fatal("Error init workers: %v", err)
+		slog.ErrorContext(ctx, "Error init RabbitMQ client: "+err.Error())
+		log.Fatal(fmt.Printf("Error init RabbitMQ client: %v", err))
 	}
-	logger.Log.Info("Init workers - ОК")
+	slog.InfoContext(ctx, "Init workers - ОК")
 
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		logger.Log.Info("Running Deleting")
+		slog.InfoContext(ctx, "Running Deleting")
 		return wrk.Deleting(ctx)
 	})
 
 	g.Go(func() error {
-		logger.Log.Info("Running Uploading")
+		slog.InfoContext(ctx, "Running Uploading")
 		return wrk.Uploading(ctx)
 	})
+
+	slog.InfoContext(ctx, "Application started")
 
 	// Ожидаем сигналы для graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -83,14 +93,14 @@ func main() {
 	// Ждем сигнал завершения
 	select {
 	case <-sigChan:
-		logger.Log.Info("Application stop signal received")
+		slog.InfoContext(ctx, "Application stop signal received")
 		cancel()
 	case <-ctx.Done():
-		logger.Log.Info("Emergency application stop")
+		slog.InfoContext(ctx, "Emergency application stop")
 	}
 
 	g.Wait()
 
-	logger.Log.Info("Application stopped")
+	slog.InfoContext(ctx, "Application stopped")
 
 }

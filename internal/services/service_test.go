@@ -78,7 +78,7 @@ func TestUploadAvatar_Success(t *testing.T) {
 
 	// ожидаем публикации события
 	mockBroker.EXPECT().
-		PublishUnloadEvent(gomock.Any()).
+		PublishUnloadEvent(ctx, gomock.Any()).
 		Return(nil)
 
 	avatar, err := srv.UploadAvatar(ctx, userID, file, fileHeader)
@@ -108,6 +108,7 @@ func TestGetAvatar_Success(t *testing.T) {
 
 	mockMeta := mocks.NewMockMetaDB(ctrl)
 	mockFile := mocks.NewMockFileDB(ctrl)
+
 	srv, _ := NewAvatarService(mockMeta, mockFile, nil)
 
 	ctx := context.Background()
@@ -132,6 +133,7 @@ func TestDeleteAvatar_Success(t *testing.T) {
 
 	mockMeta := mocks.NewMockMetaDB(ctrl)
 	mockBroker := mocks.NewMockBroker(ctrl)
+
 	srv, _ := NewAvatarService(mockMeta, nil, mockBroker)
 
 	ctx := context.Background()
@@ -146,7 +148,7 @@ func TestDeleteAvatar_Success(t *testing.T) {
 
 	mockMeta.EXPECT().GetByID(ctx, id).Return(avatar, nil)
 	mockMeta.EXPECT().Delete(ctx, id).Return(nil)
-	mockBroker.EXPECT().PublishDeleteEvent(gomock.Any()).Return(nil)
+	mockBroker.EXPECT().PublishDeleteEvent(ctx, gomock.Any()).Return(nil)
 
 	err := srv.DeleteAvatar(ctx, id, userID)
 	assert.NoError(t, err)

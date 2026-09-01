@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -15,9 +16,11 @@ import (
 
 	"github.com/KarpelesLab/gowebp"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/qesterrx/AvatarGo/internal/lerrors"
-	"github.com/qesterrx/AvatarGo/internal/logger"
 	"github.com/qesterrx/AvatarGo/internal/models"
 )
 
@@ -39,36 +42,86 @@ type FileDB interface {
 }
 
 type Broker interface {
-	PublishUnloadEvent(event *models.AvatarUploadEvent) error
-	PublishDeleteEvent(event *models.AvatarDeleteEvent) error
+	PublishUnloadEvent(ctx context.Context, event *models.AvatarUploadEvent) error
+	PublishDeleteEvent(ctx context.Context, event *models.AvatarDeleteEvent) error
 	Check() string
 }
 
 type avatarService struct {
+	otl    *slog.Logger
+	tracer trace.Tracer
+
 	metaDB MetaDB
 	fileDB FileDB
 	asyncQ Broker
+
+	//Метрики
+	mUploadAvatarCalls      metric.Int64Counter
+	mGetAvatarCalls         metric.Int64Counter
+	mGetAvatarMetadataCalls metric.Int64Counter
+	mDeleteAvatarCalls      metric.Int64Counter
 }
 
 func NewAvatarService(metaDB MetaDB, fileDB FileDB, asyncQ Broker) (*avatarService, error) {
+
+	component := "AvatarService"
+
+	log := slog.With("component", component)
+
+	tracer := otel.Tracer(component)
+
+	meter := otel.Meter(component)
+	mUploadAvatarCalls, err := meter.Int64Counter("app.uploadavatar.calls")
+	if err != nil {
+		return nil, fmt.Errorf("creating metric uploadavatar: %v", err)
+	}
+	mGetAvatarCalls, err := meter.Int64Counter("app.getavatar.calls")
+	if err != nil {
+		return nil, fmt.Errorf("creating metric getavatar: %v", err)
+	}
+	mGetAvatarMetadataCalls, err := meter.Int64Counter("app.getavatarmetadata.calls")
+	if err != nil {
+		return nil, fmt.Errorf("creating metric getavatarmetadata: %v", err)
+	}
+	mDeleteAvatarCalls, err := meter.Int64Counter("app.deleteavatar.calls")
+	if err != nil {
+		return nil, fmt.Errorf("creating metric getavatarmetadata: %v", err)
+	}
+
 	srv := avatarService{
-		metaDB: metaDB,
-		fileDB: fileDB,
-		asyncQ: asyncQ,
+		tracer:                  tracer,
+		otl:                     log,
+		metaDB:                  metaDB,
+		fileDB:                  fileDB,
+		asyncQ:                  asyncQ,
+		mUploadAvatarCalls:      mUploadAvatarCalls,
+		mGetAvatarCalls:         mGetAvatarCalls,
+		mGetAvatarMetadataCalls: mGetAvatarMetadataCalls,
+		mDeleteAvatarCalls:      mDeleteAvatarCalls,
 	}
 
 	return &srv, nil
 }
 
 func (s *avatarService) UploadAvatar(ctx context.Context, userID string, file multipart.File, fileHeader *multipart.FileHeader) (*models.Avatar, error) {
+
+	ctx, span := s.tracer.Start(ctx, "UploadAvatar")
+	defer span.End()
+
+	s.otl.InfoContext(ctx, "Call", slog.String("method", "UploadAvatar"), slog.String("params", fmt.Sprintf("userID %s", userID)))
+
+	s.mUploadAvatarCalls.Add(ctx, 1)
+
 	// Читаем файл
 	data, err := io.ReadAll(file)
 	if err != nil {
+		s.otl.ErrorContext(ctx, "error reading file", slog.String("method", "UploadAvatar"), slog.String("params", fmt.Sprintf("userID %s", userID)), slog.Any("error", err))
 		return nil, fmt.Errorf("%w: %v", lerrors.ErrUploadFailed, err)
 	}
 
 	_, _, err = image.Decode(bytes.NewReader(data))
 	if err != nil {
+		s.otl.ErrorContext(ctx, "error invalid image content", slog.String("method", "UploadAvatar"), slog.String("params", fmt.Sprintf("userID %s", userID)), slog.Any("error", err))
 		return nil, fmt.Errorf("%w: invalid image content: %v", lerrors.ErrInvalidFormat, err)
 	}
 
@@ -89,6 +142,7 @@ func (s *avatarService) UploadAvatar(ctx context.Context, userID string, file mu
 
 	// Загружаем оригинал в S3
 	if err := s.fileDB.Put(ctx, s3Key, data, mimeType); err != nil {
+		s.otl.ErrorContext(ctx, "error s3 put", slog.String("method", "UploadAvatar"), slog.String("params", fmt.Sprintf("s3Key %s, mimeType %s", s3Key, mimeType)), slog.Any("error", err))
 		return nil, fmt.Errorf("%w: failed to put to s3: %v", lerrors.ErrUploadFailed, err)
 	}
 
@@ -109,6 +163,7 @@ func (s *avatarService) UploadAvatar(ctx context.Context, userID string, file mu
 	if err := s.metaDB.Create(ctx, avatar); err != nil {
 		// Пытаемся удалить файл из S3 при ошибке
 		_ = s.fileDB.Del(ctx, s3Key)
+		s.otl.ErrorContext(ctx, "error s3 del", slog.String("method", "UploadAvatar"), slog.String("params", fmt.Sprintf("s3Key %s", s3Key)), slog.Any("error", err))
 		return nil, fmt.Errorf("%w: failed to save metadata: %v", lerrors.ErrUploadFailed, err)
 	}
 
@@ -119,18 +174,27 @@ func (s *avatarService) UploadAvatar(ctx context.Context, userID string, file mu
 		S3Key:    s3Key,
 	}
 
-	err = s.asyncQ.PublishUnloadEvent(&event)
+	err = s.asyncQ.PublishUnloadEvent(ctx, &event)
 	if err != nil {
-		logger.Log.Error("UploadAvatar error publish event: %v", err)
+		s.otl.ErrorContext(ctx, "error publish event", slog.String("method", "UploadAvatar"), slog.String("params", fmt.Sprintf("event %v", event)), slog.Any("error", err))
 	}
 
 	return avatar, nil
 }
 
 func (s *avatarService) GetAvatar(ctx context.Context, id string, size string, format string) ([]byte, string, error) {
+
+	ctx, span := s.tracer.Start(ctx, "GetAvatar")
+	defer span.End()
+
+	s.otl.InfoContext(ctx, "Call", slog.String("method", "GetAvatar"), slog.String("params", fmt.Sprintf("id %s, size %s, format %s", id, size, format)))
+
+	s.mGetAvatarCalls.Add(ctx, 1)
+
 	// Получаем метаданные
 	avatar, err := s.metaDB.GetByID(ctx, id)
 	if err != nil {
+		s.otl.ErrorContext(ctx, "error get metadata", slog.String("method", "GetAvatar"), slog.String("params", fmt.Sprintf("id %s", id)), slog.Any("error", err))
 		return nil, "", err
 	}
 	if avatar == nil {
@@ -162,8 +226,9 @@ func (s *avatarService) GetAvatar(ctx context.Context, id string, size string, f
 	}
 
 	if format != "" {
-		converted, err := s.convertImage(data, format)
+		converted, err := s.convertImage(ctx, data, format)
 		if err != nil {
+			s.otl.ErrorContext(ctx, "error convert image", slog.String("method", "GetAvatar"), slog.String("params", fmt.Sprintf("id %s format %s", id, format)), slog.Any("error", err))
 			return nil, "", err
 		}
 		return converted, "image/" + format, nil
@@ -173,8 +238,17 @@ func (s *avatarService) GetAvatar(ctx context.Context, id string, size string, f
 }
 
 func (s *avatarService) GetAvatarMetadata(ctx context.Context, id string) (*models.AvatarMetadata, error) {
+
+	ctx, span := s.tracer.Start(ctx, "GetAvatarMetadata")
+	defer span.End()
+
+	s.otl.InfoContext(ctx, "Call", slog.String("method", "GetAvatarMetadata"), slog.String("params", fmt.Sprintf("id %s", id)))
+
+	s.mGetAvatarMetadataCalls.Add(ctx, 1)
+
 	avatar, err := s.metaDB.GetByID(ctx, id)
 	if err != nil {
+		s.otl.ErrorContext(ctx, "error get metadata", slog.String("method", "GetAvatarMetadata"), slog.String("params", fmt.Sprintf("id %s", id)), slog.Any("error", err))
 		return nil, err
 	}
 	if avatar == nil {
@@ -184,11 +258,13 @@ func (s *avatarService) GetAvatarMetadata(ctx context.Context, id string) (*mode
 	// Получаем данные из S3 для определения размеров
 	data, _, err := s.fileDB.Get(ctx, avatar.S3Key)
 	if err != nil {
+		s.otl.ErrorContext(ctx, "error get data", slog.String("method", "GetAvatarMetadata"), slog.String("params", fmt.Sprintf("S3Key %s", avatar.S3Key)), slog.Any("error", err))
 		return nil, err
 	}
 
 	dimensions, err := s.getImageDimensions(data)
 	if err != nil {
+		s.otl.ErrorContext(ctx, "error image dim", slog.String("method", "GetAvatarMetadata"), slog.String("params", fmt.Sprintf("id %s", id)), slog.Any("error", err))
 		return nil, err
 	}
 
@@ -218,9 +294,18 @@ func (s *avatarService) GetAvatarMetadata(ctx context.Context, id string) (*mode
 }
 
 func (s *avatarService) DeleteAvatar(ctx context.Context, id string, userID string) error {
+
+	ctx, span := s.tracer.Start(ctx, "DeleteAvatar")
+	defer span.End()
+
+	s.otl.InfoContext(ctx, "Call", slog.String("method", "DeleteAvatar"), slog.String("params", fmt.Sprintf("id %s, userID %s", id, userID)))
+
+	s.mDeleteAvatarCalls.Add(ctx, 1)
+
 	// Получаем метаданные
 	avatar, err := s.metaDB.GetByID(ctx, id)
 	if err != nil {
+		s.otl.ErrorContext(ctx, "error get metadata", slog.String("method", "DeleteAvatar"), slog.String("params", fmt.Sprintf("id %s", id)), slog.Any("error", err))
 		return err
 	}
 	if avatar == nil {
@@ -235,6 +320,7 @@ func (s *avatarService) DeleteAvatar(ctx context.Context, id string, userID stri
 	// Мягкое удаление из БД
 	err = s.metaDB.Delete(ctx, id)
 	if err != nil {
+		s.otl.ErrorContext(ctx, "error delete metadata", slog.String("method", "DeleteAvatar"), slog.String("params", fmt.Sprintf("id %s", id)), slog.Any("error", err))
 		return lerrors.ErrDeletingFailed
 	}
 
@@ -249,16 +335,20 @@ func (s *avatarService) DeleteAvatar(ctx context.Context, id string, userID stri
 		S3Keys:   thumbnailS3Keys,
 	}
 
-	err = s.asyncQ.PublishDeleteEvent(&event)
+	err = s.asyncQ.PublishDeleteEvent(ctx, &event)
 	if err != nil {
-		logger.Log.Error("DeleteAvatar error publish event: %v", err)
+		s.otl.ErrorContext(ctx, "error publish event", slog.String("method", "DeleteAvatar"), slog.String("params", fmt.Sprintf("id %s, userID %s", id, userID)), slog.Any("error", err))
 	}
 
 	return nil
 
 }
 
-func (s *avatarService) convertImage(data []byte, toFormat string) ([]byte, error) {
+func (s *avatarService) convertImage(ctx context.Context, data []byte, toFormat string) ([]byte, error) {
+
+	ctx, span := s.tracer.Start(ctx, "convertImage")
+	defer span.End()
+
 	// Декодируем изображение
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -285,6 +375,7 @@ func (s *avatarService) convertImage(data []byte, toFormat string) ([]byte, erro
 }
 
 func (s *avatarService) getImageDimensions(data []byte) (*models.Dimensions, error) {
+
 	img, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, err

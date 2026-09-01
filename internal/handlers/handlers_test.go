@@ -21,7 +21,7 @@ func TestUploadAvatar_Handler(t *testing.T) {
 	mockSrv := mocks.NewMockService(ctrl)
 	h, _ := NewHandlers(mockSrv)
 
-	router := h.GetRouter()
+	router := h.GetRouter("avatargo-server-test")
 
 	// Подготовка multipart form
 	body := new(bytes.Buffer)
@@ -55,7 +55,7 @@ func TestUploadAvatar_MissingUserID(t *testing.T) {
 
 	mockSrv := mocks.NewMockService(ctrl)
 	h, _ := NewHandlers(mockSrv)
-	router := h.GetRouter()
+	router := h.GetRouter("avatargo-server-test")
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
@@ -80,7 +80,7 @@ func TestGetAvatarById_Handler(t *testing.T) {
 
 	mockSrv := mocks.NewMockService(ctrl)
 	h, _ := NewHandlers(mockSrv)
-	router := h.GetRouter()
+	router := h.GetRouter("avatargo-server-test")
 
 	mockSrv.EXPECT().
 		GetAvatar(gomock.Any(), "avatar123", "", "").
@@ -101,7 +101,7 @@ func TestDeleteAvatar_Handler(t *testing.T) {
 
 	mockSrv := mocks.NewMockService(ctrl)
 	h, _ := NewHandlers(mockSrv)
-	router := h.GetRouter()
+	router := h.GetRouter("avatargo-server-test")
 
 	req := httptest.NewRequest("DELETE", "/api/v1/avatars/avatar123", nil)
 	req.Header.Set("X-User-ID", "user123")
