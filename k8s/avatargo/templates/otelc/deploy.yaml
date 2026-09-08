@@ -37,6 +37,7 @@ spec:
             requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
               cpu: {{ .Values.otel.resources.requests.cpu }}
               memory: {{ .Values.otel.resources.requests.memory }}
+
       volumes:
         - name: config
           configMap:

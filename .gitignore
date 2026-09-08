@@ -40,4 +40,6 @@ docker/minio/minio.license
 docker/postgres/data/*
 docker/rabbitmq/data/*
 
-excample
+#k8s
+k8s/files/minio.license
+k8s/excample

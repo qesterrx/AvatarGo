@@ -1,0 +1,45 @@
+{{- if .Values.jaeger.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.jaeger.component }}-deploy
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.jaeger.component }}
+spec:
+  replicas: {{ .Values.jaeger.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "avatargo.selectorLabels" . | nindent 6 }}
+      component: {{ .Values.jaeger.component }}
+  template:
+    metadata:
+      labels:
+        {{- include "avatargo.selectorLabels" . | nindent 8 }}
+        component: {{ .Values.jaeger.component }}
+    spec:
+      containers:
+        - name: {{ include "avatargo.fullname" . }}-{{ .Values.jaeger.component }}
+          image: {{ .Values.jaeger.image }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "avatargo.fullname" . }}-{{ .Values.jaeger.component }}-cf        #Имя конфигмапы которая подключится к поду
+          resources:                        #Ресурсы
+            limits:                         #Предел исползования ресурсов контейреном, при привышении CPU - тротлинг, при превышении памяти - рестрат
+              cpu: {{ .Values.jaeger.resources.limits.cpu }}
+              memory: {{ .Values.jaeger.resources.limits.memory }}
+            requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
+              cpu: {{ .Values.jaeger.resources.requests.cpu }}
+              memory: {{ .Values.jaeger.resources.requests.memory }}
+          livenessProbe:
+            exec:
+              command:
+                - wget
+                - --spider
+                - -q
+                - http://localhost:16686
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+{{- end }}

@@ -33,4 +33,13 @@ spec:
             requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
               cpu: {{ .Values.rabbitmq.resources.requests.cpu }}
               memory: {{ .Values.rabbitmq.resources.requests.memory }}
+          livenessProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - check_port_connectivity
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
 {{- end }}

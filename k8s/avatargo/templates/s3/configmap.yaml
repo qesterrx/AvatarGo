@@ -8,5 +8,5 @@ metadata:
 
 data:
   minio.license: |
-{{ .Files.Get "files/minio/minio.license" | indent 4 }}
+{{ .Files.Get "files/minio.license" | indent 4 }}
 {{- end }}

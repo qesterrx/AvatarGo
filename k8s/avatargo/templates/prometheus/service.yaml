@@ -1,0 +1,19 @@
+{{- if .Values.prometheus.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.prometheus.component }}-srvc
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.prometheus.component }}
+spec:
+  type: "ClusterIP"
+  selector:
+    app.kubernetes.io/name: {{ include "avatargo.name" . }}
+    component: {{ .Values.prometheus.component }}
+  ports:
+    - name: prometheus-http
+      port: {{ .Values.prometheus.port | default 9090 }}
+      targetPort: {{ .Values.prometheus.port | default 9090 }}
+      protocol: TCP
+{{- end }}

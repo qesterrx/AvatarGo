@@ -33,4 +33,28 @@ spec:
             requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
               cpu: {{ .Values.database.resources.requests.cpu }}
               memory: {{ .Values.database.resources.requests.memory }}
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - {{ .Values.database.user }}
+                - -d
+                - {{ .Values.database.database }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - {{ .Values.database.user }}
+                - -d
+                - {{ .Values.database.database }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
 {{- end }}

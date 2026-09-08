@@ -34,4 +34,14 @@ spec:
             requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
               cpu: {{ .Values.app.worker.resources.requests.cpu }}
               memory: {{ .Values.app.worker.resources.requests.memory }}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "ps aux | grep -v grep | grep worker"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
 {{- end }}

@@ -44,6 +44,16 @@ spec:
             requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
               cpu: {{ .Values.s3.resources.requests.cpu }}
               memory: {{ .Values.s3.resources.requests.memory }}
+          livenessProbe:
+            exec:
+              command:
+                - curl
+                - -f
+                - http://localhost:9000/minio/health/live
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
         - name: license
           configMap:

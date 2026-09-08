@@ -37,6 +37,12 @@ ingress:
           pathType: Prefix
           component: minio
           servicePort: 9001
+    - host: grafana.avatargo.local
+      paths:
+        - path: /
+          pathType: Prefix
+          component: grafana
+          servicePort: 3200
 
 # Persistence
 persistence:
@@ -53,26 +59,39 @@ app:
     enabled: true
     command: "./server"
     port: "8080"
-    replicas: 1
+    replicas: 2
     resources:
       limits:
-        cpu: "250m"
-        memory: "125Mi"
-      requests:
-        cpu: "150m"
+        cpu: "100m"
         memory: "100Mi"
+      requests:
+        cpu: "50m"
+        memory: "50Mi"
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+      targetMEMUtilizationPercentage: 80
   worker:
     enabled: true
     component: worker
     command: "./worker"
-    replicas: 1
+    replicas: 2
     resources:
       limits:
-        cpu: "250m"
-        memory: "125Mi"
-      requests:
-        cpu: "150m"
+        cpu: "100m"
         memory: "100Mi"
+      requests:
+        cpu: "50m"
+        memory: "50Mi"
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+      targetMEMUtilizationPercentage: 80
+
 
 # Database
 database:
@@ -89,10 +108,10 @@ database:
     size: 10Gi
   resources:
     limits:
-      cpu: "250m"
+      cpu: "500m"
       memory: "512Mi"
     requests:
-      cpu: "200m"
+      cpu: "250m"
       memory: "325Mi"
 
 # RabbitMQ
@@ -111,10 +130,10 @@ rabbitmq:
     size: 5Gi
   resources:
     limits:
-      cpu: "250m"
+      cpu: "500m"
       memory: "512Mi"
     requests:
-      cpu: "200m"
+      cpu: "250m"
       memory: "325Mi"
 
 # MinIO
@@ -133,10 +152,10 @@ s3:
     size: 20Gi
   resources:
     limits:
-      cpu: "500m"
+      cpu: "400m"
       memory: "512Mi"
     requests:
-      cpu: "250m"
+      cpu: "200m"
       memory: "325Mi"
 
 # OpenTelemetry
@@ -152,7 +171,7 @@ otel:
   compression: "gzip"
   resources:
     limits:
-      cpu: "250m"
+      cpu: "300m"
       memory: "125Mi"
     requests:
       cpu: "150m"
@@ -161,53 +180,67 @@ otel:
 # Loki
 loki:
   enabled: true
+  component: loki
   image: grafana/loki:3.6.5
-  port: 3100
+  port: "3100"
+  grpcPort: "9096"
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 10Gi
   resources:
     limits:
-      cpu: "1"
-      memory: "1Gi"
-    requests:
-      cpu: "250m"
+      cpu: "200m"
       memory: "512Mi"
-
-# Prometheus
-prometheus:
-  enabled: true
-  image: prom/prometheus:latest
-  port: 9090
-  resources:
-    limits:
-      cpu: "1"
-      memory: "1Gi"
     requests:
-      cpu: "250m"
-      memory: "512Mi"
+      cpu: "100m"
+      memory: "256Mi"
 
 # Grafana
 grafana:
   enabled: true
+  component: grafana
   image: grafana/grafana:12.3.1
-  port: 3200
+  port: "3200"
+  replicas: 1
   adminUser: admin
   adminPassword: admin
+  persistence:
+    enabled: true
+    size: 5Gi
   resources:
     limits:
-      cpu: "1"
-      memory: "1Gi"
-    requests:
-      cpu: "250m"
+      cpu: "300m"
       memory: "512Mi"
+    requests:
+      cpu: "150m"
+      memory: "256Mi"
 
 # Jaeger
 jaeger:
   enabled: true
+  component: jaeger
   image: jaegertracing/all-in-one:latest
   port: 16686
+  grpcPort: 4317
   resources:
     limits:
-      cpu: "1"
-      memory: "1Gi"
+      cpu: "200m"
+      memory: "256Mi"
     requests:
-      cpu: "250m"
-      memory: "512Mi"
+      cpu: "100m"
+      memory: "128Mi"
+
+# Prometheus
+prometheus:
+  enabled: true
+  component: prometheus
+  image: prom/prometheus:latest
+  port: 9090
+  resources:
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+    requests:
+      cpu: "100m"
+      memory: "128Mi"

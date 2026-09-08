@@ -34,4 +34,12 @@ spec:
             requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
               cpu: {{ .Values.app.server.resources.requests.cpu }}
               memory: {{ .Values.app.server.resources.requests.memory }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.app.server.port | default 8080 }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
 {{- end }}
