@@ -1,0 +1,213 @@
+# Default values for avatargo.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
+replicaCount: 1
+imagePullPolicy: IfNotPresent
+environment: local
+
+# Service settings
+service:
+  type: ClusterIP
+
+# Ingress settings
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    kubernetes.io/ingress.class: traefik
+  hosts:
+    - host: avatargo.local
+      paths:
+        - path: /
+          pathType: Prefix
+          component: server
+          servicePort: 8080
+    - host: rabbitmq.avatargo.local
+      paths:
+        - path: /
+          pathType: Prefix
+          component: rabbitmq
+          servicePort: 15672
+    - host: minio.avatargo.local
+      paths:
+        - path: /
+          pathType: Prefix
+          component: minio
+          servicePort: 9001
+
+# Persistence
+persistence:
+  enabled: true
+  storageClass: ""
+  size: 10Gi
+
+# Application settings
+app:
+  name: avatargo
+  image: avatargo:1.0
+  server:
+    component: server
+    enabled: true
+    command: "./server"
+    port: "8080"
+    replicas: 1
+    resources:
+      limits:
+        cpu: "250m"
+        memory: "125Mi"
+      requests:
+        cpu: "150m"
+        memory: "100Mi"
+  worker:
+    enabled: true
+    component: worker
+    command: "./worker"
+    replicas: 1
+    resources:
+      limits:
+        cpu: "250m"
+        memory: "125Mi"
+      requests:
+        cpu: "150m"
+        memory: "100Mi"
+
+# Database
+database:
+  enabled: true
+  component: postgres
+  image: postgres:15-alpine
+  user: postgres_avatargo
+  password: postgres_avatargo
+  database: avatargo
+  pgdata: /var/lib/postgresql/data/pgdata
+  port: "5432"
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    limits:
+      cpu: "250m"
+      memory: "512Mi"
+    requests:
+      cpu: "200m"
+      memory: "325Mi"
+
+# RabbitMQ
+rabbitmq:
+  enabled: true
+  component: rabbitmq
+  image: rabbitmq:3.12-management
+  user: rabbitmq_avatargo
+  password: rabbitmq_avatargo
+  queue: avatargo
+  addarg: +sbwt none +sbwtdcpu none +sbwtdio none
+  amqpPort: "5672"
+  consolePort: "15672"
+  persistence:
+    enabled: true
+    size: 5Gi
+  resources:
+    limits:
+      cpu: "250m"
+      memory: "512Mi"
+    requests:
+      cpu: "200m"
+      memory: "325Mi"
+
+# MinIO
+s3:
+  enabled: true
+  component: minio
+  image: quay.io/minio/aistor/minio:latest
+  user: minio_avatargo
+  password: minio_avatargo
+  apiPort: "9000"
+  consolePort: "9001"
+  bucket: avatargo
+  region: us-east-1
+  persistence:
+    enabled: true
+    size: 20Gi
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+    requests:
+      cpu: "250m"
+      memory: "325Mi"
+
+# OpenTelemetry
+otel:
+  enabled: true
+  component: otel-collector
+  image: otel/opentelemetry-collector-contrib:latest
+  replicas: 1
+  grpcPort: "4317"
+  httpPort: "4318"
+  metricsPort: "8889"
+  insecure: "true"
+  compression: "gzip"
+  resources:
+    limits:
+      cpu: "250m"
+      memory: "125Mi"
+    requests:
+      cpu: "150m"
+      memory: "100Mi"
+
+# Loki
+loki:
+  enabled: true
+  image: grafana/loki:3.6.5
+  port: 3100
+  resources:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+
+# Prometheus
+prometheus:
+  enabled: true
+  image: prom/prometheus:latest
+  port: 9090
+  resources:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+
+# Grafana
+grafana:
+  enabled: true
+  image: grafana/grafana:12.3.1
+  port: 3200
+  adminUser: admin
+  adminPassword: admin
+  resources:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+
+# Jaeger
+jaeger:
+  enabled: true
+  image: jaegertracing/all-in-one:latest
+  port: 16686
+  resources:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "250m"
+      memory: "512Mi"

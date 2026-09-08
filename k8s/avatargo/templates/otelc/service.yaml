@@ -1,0 +1,27 @@
+{{- if .Values.otel.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.otel.component }}-srvc
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.otel.component }}
+spec:
+  type: "ClusterIP"
+  selector:
+    app.kubernetes.io/name: {{ include "avatargo.name" . }}
+    component: {{ .Values.otel.component }}
+  ports:
+    - name: grpc
+      port: {{ .Values.otel.grpcPort | default 4317 }}
+      targetPort: {{ .Values.otel.grpcPort | default 4317 }}
+      protocol: TCP
+    - name: http
+      port: {{ .Values.otel.httpPort | default 4318 }}
+      targetPort: {{ .Values.otel.httpPort | default 4318 }}
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.otel.metricsPort | default 8889 }}
+      targetPort: {{ .Values.otel.metricsPort | default 8889 }}
+      protocol: TCP
+{{- end }}

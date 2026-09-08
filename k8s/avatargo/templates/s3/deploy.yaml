@@ -1,0 +1,51 @@
+{{- if .Values.s3.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.s3.component }}-deploy
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.s3.component }}
+spec:
+  replicas: {{ .Values.s3.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "avatargo.selectorLabels" . | nindent 6 }}
+      component: {{ .Values.s3.component }}
+  template:
+    metadata:
+      labels:
+        {{- include "avatargo.selectorLabels" . | nindent 8 }}
+        component: {{ .Values.s3.component }}
+    spec:
+      containers:
+        - name: {{ include "avatargo.fullname" . }}-{{ .Values.s3.component }}
+          image: {{ .Values.s3.image }}
+          command:
+            - minio
+          args:
+            - server
+            - /mnt/data
+            - --license
+            - /etc/minio/license/minio.license
+          volumeMounts:
+            - name: license
+              mountPath: /etc/minio/license
+              readOnly: true
+          envFrom:
+            - configMapRef:
+                name: {{ include "avatargo.fullname" . }}-{{ .Values.s3.component }}-cf        #Имя конфигмапы которая подключится к поду
+            - secretRef:
+                name: {{ include "avatargo.fullname" . }}-{{ .Values.s3.component }}-scrt      #Имя секрета который подключится к поду
+          resources:                        #Ресурсы
+            limits:                         #Предел исползования ресурсов контейреном, при привышении CPU - тротлинг, при превышении памяти - рестрат
+              cpu: {{ .Values.s3.resources.limits.cpu }}
+              memory: {{ .Values.s3.resources.limits.memory }}
+            requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
+              cpu: {{ .Values.s3.resources.requests.cpu }}
+              memory: {{ .Values.s3.resources.requests.memory }}
+      volumes:
+        - name: license
+          configMap:
+            name: {{ include "avatargo.fullname" . }}-{{ .Values.s3.component }}-cf
+{{- end }}

@@ -1,0 +1,23 @@
+{{- if .Values.rabbitmq.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.rabbitmq.component }}-srvc
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.rabbitmq.component }}
+spec:
+  type: "ClusterIP"
+  selector:
+    app.kubernetes.io/name: {{ include "avatargo.name" . }}
+    component: {{ .Values.rabbitmq.component }}
+  ports:
+    - name: rabbit-ampq
+      port: {{ .Values.rabbitmq.amqpPort | default 5672 }}
+      targetPort: {{ .Values.rabbitmq.amqpPort | default 5672 }}
+      protocol: TCP
+    - name: rabbit-console
+      port: {{ .Values.rabbitmq.consolePort | default 15672 }}
+      targetPort: {{ .Values.rabbitmq.consolePort | default 15672 }}
+      protocol: TCP
+{{- end }}

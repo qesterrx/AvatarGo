@@ -39,3 +39,5 @@ docker/minio/certs/*
 docker/minio/minio.license
 docker/postgres/data/*
 docker/rabbitmq/data/*
+
+excample

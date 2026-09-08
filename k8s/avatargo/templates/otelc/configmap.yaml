@@ -1,0 +1,12 @@
+{{- if .Values.otel.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.otel.component }}-cf
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+
+data:
+  config.yaml: |
+{{ .Files.Get "files/otel-collector-config.yml" | indent 4 }}
+{{- end }}

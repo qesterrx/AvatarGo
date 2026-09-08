@@ -1,0 +1,36 @@
+{{- if .Values.rabbitmq.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.rabbitmq.component }}-deploy
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.rabbitmq.component }}
+spec:
+  replicas: {{ .Values.rabbitmq.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "avatargo.selectorLabels" . | nindent 6 }}
+      component: {{ .Values.rabbitmq.component }}
+  template:
+    metadata:
+      labels:
+        {{- include "avatargo.selectorLabels" . | nindent 8 }}
+        component: {{ .Values.rabbitmq.component }}
+    spec:
+      containers:
+        - name: {{ include "avatargo.fullname" . }}-{{ .Values.rabbitmq.component }}
+          image: {{ .Values.rabbitmq.image }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "avatargo.fullname" . }}-{{ .Values.rabbitmq.component }}-cf        #Имя конфигмапы которая подключится к поду
+            - secretRef:
+                name: {{ include "avatargo.fullname" . }}-{{ .Values.rabbitmq.component }}-scrt      #Имя секрета который подключится к поду
+          resources:                        #Ресурсы
+            limits:                         #Предел исползования ресурсов контейреном, при привышении CPU - тротлинг, при превышении памяти - рестрат
+              cpu: {{ .Values.rabbitmq.resources.limits.cpu }}
+              memory: {{ .Values.rabbitmq.resources.limits.memory }}
+            requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
+              cpu: {{ .Values.rabbitmq.resources.requests.cpu }}
+              memory: {{ .Values.rabbitmq.resources.requests.memory }}
+{{- end }}

@@ -1,0 +1,12 @@
+{{- if .Values.s3.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.s3.component }}-cf
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+
+data:
+  minio.license: |
+{{ .Files.Get "files/minio/minio.license" | indent 4 }}
+{{- end }}

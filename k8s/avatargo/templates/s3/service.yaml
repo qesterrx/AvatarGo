@@ -1,0 +1,23 @@
+{{- if .Values.s3.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.s3.component }}-srvc
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.s3.component }}
+spec:
+  type: "ClusterIP"
+  selector:
+    app.kubernetes.io/name: {{ include "avatargo.name" . }}
+    component: {{ .Values.s3.component }}
+  ports:
+    - name: s3-api
+      port: {{ .Values.s3.apiPort | default 9000 }}
+      targetPort: {{ .Values.s3.apiPort | default 9000 }}
+      protocol: TCP
+    - name: s3-console
+      port: {{ .Values.s3.consolePort | default 9001 }}
+      targetPort: {{ .Values.s3.consolePort | default 9001 }}
+      protocol: TCP
+{{- end }}

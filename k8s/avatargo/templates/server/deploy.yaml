@@ -1,0 +1,37 @@
+{{- if .Values.app.server.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.app.server.component }}-deploy
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.app.server.component }}
+spec:
+  replicas: {{ .Values.app.server.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "avatargo.selectorLabels" . | nindent 6 }}
+      component: {{ .Values.app.server.component }}
+  template:
+    metadata:
+      labels:
+        {{- include "avatargo.selectorLabels" . | nindent 8 }}
+        component: {{ .Values.app.server.component }}
+    spec:
+      containers:
+        - name: {{ include "avatargo.fullname" . }}-{{ .Values.app.server.component }}
+          image: {{ .Values.app.image }}
+          command: ["{{ .Values.app.server.command }}"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "avatargo.fullname" . }}-{{ .Values.app.server.component }}-cf        #Имя конфигмапы которая подключится к поду
+            - secretRef:
+                name: {{ include "avatargo.fullname" . }}-{{ .Values.app.server.component }}-scrt      #Имя секрета который подключится к поду
+          resources:                        #Ресурсы
+            limits:                         #Предел исползования ресурсов контейреном, при привышении CPU - тротлинг, при превышении памяти - рестрат
+              cpu: {{ .Values.app.server.resources.limits.cpu }}
+              memory: {{ .Values.app.server.resources.limits.memory }}
+            requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
+              cpu: {{ .Values.app.server.resources.requests.cpu }}
+              memory: {{ .Values.app.server.resources.requests.memory }}
+{{- end }}
