@@ -1,0 +1,26 @@
+{{- if .Values.app.server.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.app.server.component }}-cf
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+
+data:
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://{{ include "avatargo.fullname" . }}-{{ .Values.otel.component }}-srvc:{{ .Values.otel.grpcPort }}
+  OTEL_EXPORTER_OTLP_COMPRESSION: {{ .Values.otel.compression | quote}}
+  OTEL_EXPORTER_OTLP_INSECURE: {{ .Values.otel.insecure | quote}}
+  OTEL_SERVICE_NAME: {{ include "avatargo.fullname" . }}-{{ .Values.app.server.component }}
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment={{ .Values.environment }}
+  DB_HOST: {{ include "avatargo.fullname" . }}-{{ .Values.database.component }}-srvc
+  DB_PORT: {{ .Values.database.port | default 5432 | quote}}
+  DB_NAME: {{ .Values.database.database | quote}}
+  S3_ENDPOINT: {{ include "avatargo.fullname" . }}-{{ .Values.s3.component }}-srvc:{{ .Values.s3.apiPort }}
+  S3_BUCKET: {{ .Values.s3.bucket | quote}}
+  S3_REGION: {{ .Values.s3.region | quote}}
+  RBT_HOST: {{ include "avatargo.fullname" . }}-{{ .Values.rabbitmq.component }}-srvc
+  RBT_PORT: {{ .Values.rabbitmq.amqpPort | default 5672 | quote}}
+  RBT_QUEUE: {{ .Values.rabbitmq.queue | quote}}
+  SRV_HOST: {{ .Values.app.server.host | default "" }}
+  SRV_PORT: {{ .Values.app.server.port | default 8080 | quote}}
+{{- end }}

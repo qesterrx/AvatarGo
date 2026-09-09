@@ -39,3 +39,7 @@ docker/minio/certs/*
 docker/minio/minio.license
 docker/postgres/data/*
 docker/rabbitmq/data/*
+
+#k8s
+k8s/avatargo/files/minio.license
+k8s/excample

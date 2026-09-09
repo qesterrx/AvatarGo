@@ -1,0 +1,23 @@
+{{- if .Values.loki.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.loki.component }}-srvc
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.loki.component }}
+spec:
+  type: "ClusterIP"
+  selector:
+    app.kubernetes.io/name: {{ include "avatargo.name" . }}
+    component: {{ .Values.loki.component }}
+  ports:
+    - name: loki-http
+      port: {{ .Values.loki.port | default 3100 }}
+      targetPort: {{ .Values.loki.port | default 3100 }}
+      protocol: TCP
+    - name: loki-grpc
+      port: {{ .Values.loki.grpcPort | default 9096 }}
+      targetPort: {{ .Values.loki.grpcPort | default 9096 }}
+      protocol: TCP
+{{- end }}

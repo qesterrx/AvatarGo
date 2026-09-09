@@ -1,0 +1,23 @@
+{{- if .Values.grafana.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.grafana.component }}-cf
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+
+data:
+  GF_SERVER_HTTP_PORT: {{ .Values.grafana.port | quote}}
+  datasources.yml: |
+    apiVersion: 2
+
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://{{ include "avatargo.fullname" . }}-{{ .Values.loki.component }}-srvc:{{ .Values.loki.port }}
+        isDefault: true
+        editable: true
+        jsonData:
+          maxLines: 1000
+{{- end }}

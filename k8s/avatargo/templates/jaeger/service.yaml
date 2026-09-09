@@ -1,0 +1,23 @@
+{{- if .Values.jaeger.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.jaeger.component }}-srvc
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.jaeger.component }}
+spec:
+  type: "ClusterIP"
+  selector:
+    app.kubernetes.io/name: {{ include "avatargo.name" . }}
+    component: {{ .Values.jaeger.component }}
+  ports:
+    - name: jaeger-http
+      port: {{ .Values.jaeger.port | default 16686 }}
+      targetPort: {{ .Values.jaeger.port | default 16686 }}
+      protocol: TCP
+    - name: jaeger-grpc
+      port: {{ .Values.jaeger.gprcPort | default 4317 }}
+      targetPort: {{ .Values.jaeger.gprcPort | default 4317 }}
+      protocol: TCP
+{{- end }}

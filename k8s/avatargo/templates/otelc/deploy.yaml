@@ -1,0 +1,45 @@
+{{- if .Values.otel.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.otel.component }}-deploy
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.otel.component }}
+spec:
+  replicas: {{ .Values.otel.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "avatargo.selectorLabels" . | nindent 6 }}
+      component: {{ .Values.otel.component }}
+  template:
+    metadata:
+      labels:
+        {{- include "avatargo.selectorLabels" . | nindent 8 }}
+        component: {{ .Values.otel.component }}
+    spec:
+      containers:
+        - name: {{ include "avatargo.fullname" . }}-{{ .Values.otel.component }}
+          image: {{ .Values.otel.image }}
+          args:
+            - --config=/etc/otel/config.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel
+              readOnly: true
+          envFrom:
+            - configMapRef:
+                name: {{ include "avatargo.fullname" . }}-{{ .Values.otel.component }}-cf        #Имя конфигмапы которая подключится к поду
+          resources:                        #Ресурсы
+            limits:                         #Предел исползования ресурсов контейреном, при привышении CPU - тротлинг, при превышении памяти - рестрат
+              cpu: {{ .Values.otel.resources.limits.cpu }}
+              memory: {{ .Values.otel.resources.limits.memory }}
+            requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
+              cpu: {{ .Values.otel.resources.requests.cpu }}
+              memory: {{ .Values.otel.resources.requests.memory }}
+
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "avatargo.fullname" . }}-{{ .Values.otel.component }}-cf
+{{- end }}

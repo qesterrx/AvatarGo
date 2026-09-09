@@ -1,0 +1,54 @@
+{{- if .Values.loki.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.loki.component }}-deploy
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.loki.component }}
+spec:
+  replicas: {{ .Values.loki.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "avatargo.selectorLabels" . | nindent 6 }}
+      component: {{ .Values.loki.component }}
+  template:
+    metadata:
+      labels:
+        {{- include "avatargo.selectorLabels" . | nindent 8 }}
+        component: {{ .Values.loki.component }}
+    spec:
+      containers:
+        - name: {{ include "avatargo.fullname" . }}-{{ .Values.loki.component }}
+          image: {{ .Values.loki.image }}
+          args:
+            - -config.file=/etc/loki/local-config.yml
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+              readOnly: true
+          envFrom:
+            - configMapRef:
+                name: {{ include "avatargo.fullname" . }}-{{ .Values.loki.component }}-cf        #Имя конфигмапы которая подключится к поду
+          resources:                        #Ресурсы
+            limits:                         #Предел исползования ресурсов контейреном, при привышении CPU - тротлинг, при превышении памяти - рестрат
+              cpu: {{ .Values.loki.resources.limits.cpu }}
+              memory: {{ .Values.loki.resources.limits.memory }}
+            requests:                       #Минимально необходимые ресурсы для выделения контейнеру. Кубер будет искать ноды с этими ресурсами
+              cpu: {{ .Values.loki.resources.requests.cpu }}
+              memory: {{ .Values.loki.resources.requests.memory }}
+          livenessProbe:
+            exec:
+              command:
+                - /usr/bin/loki
+                - -health
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "avatargo.fullname" . }}-{{ .Values.loki.component }}-cf
+{{- end }}

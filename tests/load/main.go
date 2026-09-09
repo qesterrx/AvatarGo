@@ -75,8 +75,8 @@ func generateUserID() string {
 	return "user-" + string(b)
 }
 
-func sendImageMultipart(imageData []byte, filename, mimeType, userID string) error {
-	url := "http://localhost:8080/api/v1/avatars"
+func sendImageMultipart(port int, imageData []byte, filename, mimeType, userID string) error {
+	url := fmt.Sprintf("http://localhost:%d/api/v1/avatars", port)
 
 	// Создаем буфер для multipart данных
 	var requestBody bytes.Buffer
@@ -135,9 +135,11 @@ func sendImageMultipart(imageData []byte, filename, mimeType, userID string) err
 func main() {
 
 	var count int
+	var port int
 	var format string
 
 	flag.IntVar(&count, "count", 1, "Количество циклов (сколько раз отправить изображение)")
+	flag.IntVar(&port, "port", 8080, "Порт")
 	flag.StringVar(&format, "format", "png", "Формат изображения: png, jpg, webp")
 
 	flag.Parse()
@@ -158,7 +160,7 @@ func main() {
 
 		// Отправляем на сервер
 		fmt.Printf("Sending to localhost:8080/api/v1/avatars with X-User-ID: %s\n", userID)
-		if err := sendImageMultipart(imageData, filename, mimeType, userID); err != nil {
+		if err := sendImageMultipart(port, imageData, filename, mimeType, userID); err != nil {
 			fmt.Printf("Error: %v\n", err)
 		} else {
 			successCount++

@@ -1,0 +1,19 @@
+{{- if .Values.grafana.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.grafana.component }}-srvc
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.grafana.component }}
+spec:
+  type: "ClusterIP"
+  selector:
+    app.kubernetes.io/name: {{ include "avatargo.name" . }}
+    component: {{ .Values.grafana.component }}
+  ports:
+    - name: grafana-http
+      port: {{ .Values.grafana.port | default 3200 }}
+      targetPort: {{ .Values.grafana.port | default 3200 }}
+      protocol: TCP
+{{- end }}

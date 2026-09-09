@@ -1,0 +1,19 @@
+{{- if .Values.app.server.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.app.server.component }}-srvc
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+    component: {{ .Values.app.server.component }}
+spec:
+  type: "ClusterIP"
+  selector:
+    app.kubernetes.io/name: {{ include "avatargo.name" . }}
+    component: {{ .Values.app.server.component }}
+  ports:
+    - name: http
+      port: {{ .Values.app.server.port | default 8080 }}
+      targetPort: {{ .Values.app.server.port | default 8080 }}
+      protocol: TCP
+{{- end }}

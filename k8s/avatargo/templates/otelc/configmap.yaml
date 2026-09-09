@@ -1,0 +1,62 @@
+{{- if .Values.otel.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "avatargo.fullname" . }}-{{ .Values.otel.component }}-cf
+  labels:
+    {{- include "avatargo.labels" . | nindent 4 }}
+
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:{{ .Values.otel.grpcPort | default 4317 }}
+          http:
+            endpoint: 0.0.0.0:{{ .Values.otel.httpPort | default 4318 }}
+
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+
+      resource/add-job:
+        attributes:
+          - key: job
+            from_attribute: service.name
+            action: upsert
+
+    exporters:
+
+      otlp/traces:
+        endpoint: '{{ include "avatargo.fullname" . }}-{{ .Values.jaeger.component }}-srvc:{{ .Values.jaeger.grpcPort }}'
+        tls:
+          insecure: true
+
+      otlphttp/loki:
+        endpoint: http://{{ include "avatargo.fullname" . }}-{{ .Values.loki.component }}-srvc:{{ .Values.loki.port }}/otlp
+        compression: "gzip"
+        tls:
+          insecure: true
+
+      prometheus:
+        endpoint: '0.0.0.0:{{ .Values.otel.metricsPort }}'
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [otlp/traces]
+        logs:
+          receivers: [otlp]
+          processors:
+            - resource/add-job
+            - batch
+          exporters: [otlphttp/loki]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [prometheus]
+{{- end }}
